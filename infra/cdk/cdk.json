@@ -1,0 +1,11 @@
+{
+  "app": "npx tsx bin/handover.ts",
+  "watch": { "include": ["**"], "exclude": ["node_modules/**", "cdk.out/**"] },
+  "context": {
+    "handover:region": "ap-south-1",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/core:enablePartitionLiterals": true
+  }
+}

@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+apps/web/dist/
+
+# CDK
+cdk.out/
+infra/cdk/cdk.context.json
+.cdk.staging/
+
+# env / secrets — no secret ever belongs in this repo (architecture.md §10.3)
+.env
+.env.*
+!.env.example
+*.pem
+
+# eval golden set: real photographs of a real home. Never commit these.
+eval/golden-set/
+
+# local tooling
+.DS_Store
+coverage/
+.vitest/
+.claude/settings.local.json

@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "aws-documentation": {
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": {
+        "AWS_REGION": "ap-south-1",
+        "AWS_PROFILE": "handover-dev",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    },
+    "aws-api": {
+      "command": "uvx",
+      "args": ["awslabs.aws-api-mcp-server@latest"],
+      "env": {
+        "AWS_REGION": "ap-south-1",
+        "AWS_PROFILE": "handover-dev",
+        "AWS_API_MCP_PROFILE_NAME": "handover-dev",
+        "READ_OPERATIONS_ONLY": "true",
+        "REQUIRE_MUTATION_CONSENT": "true",
+        "AWS_API_MCP_ALLOW_UNRESTRICTED_LOCAL_FILE_ACCESS": "workdir",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
