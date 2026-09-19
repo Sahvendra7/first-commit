@@ -435,18 +435,21 @@ erDiagram
         bool mta_adopted
         int deposit_cap_months
         int refund_window_days
-        decimal statutory_interest_pct
+        int statutory_interest_bps
         string authority_name
         json escalation_steps
         json statute_refs
     }
 ```
 
+`statutory_interest_bps` is an integer in basis points, not a decimal percent:
+`600 bps = 6.00% per annum`.
+
 ## 6.4 Consistency, lifecycle, and money
 
 **Consistency.** Strongly consistent reads for anything in the write-then-read path (create tenancy then immediately fetch it). Eventually consistent reads for GSI1 listing — a tenancy appearing in the list a second late is harmless. The only genuine race is a user completing a phase while `photo-ingest` is still writing the last photo; solved by an atomic `ADD photo_count` and a completion check that verifies counts match the client's declared upload count, retrying for up to 10 seconds before proceeding.
 
-**Money is stored in paise as integers.** Never floats, anywhere. Interest computation is integer arithmetic with an explicit rounding rule.
+**Money is stored in paise as integers.** Never floats, anywhere. Interest computation is integer arithmetic with an explicit rounding rule. **Interest rates follow the same rule for the same reason:** rates are stored as integer basis points (`statutory_interest_bps`, §6.3), because a float rate multiplied into a paise amount reintroduces exactly the rounding error that integer paise exists to prevent.
 
 **Lifecycle.**
 
@@ -456,9 +459,9 @@ erDiagram
 | Generated PDFs | Same as evidence | S3 lifecycle |
 | Job records | 7 days | DynamoDB TTL |
 | Diff cache | 90 days | DynamoDB TTL |
-| Deleted account | Evidence purged within 30 days | Scheduled purge on `DELETED` marker |
+| Deleted account | Not implemented — see §15.3 | Cut for the solo build; there is no `DELETED` status in `TENANCY_STATUSES` |
 
-The 30-day delay on deletion is deliberate: accidental deletion of the only evidence in an active dispute is unrecoverable, so a grace period is the correct default.
+When account deletion is built, a 30-day delay is the right default: accidental deletion of the only evidence in an active dispute is unrecoverable, so a grace period is correct. It is not built here (§15.3).
 
 **Caching strategy: none, by design.** The only cached thing is the diff result, cached for cost and idempotency rather than latency. CloudFront caches static frontend assets. There is no application cache because there is no repeated read of the same hot data.
 
@@ -1095,26 +1098,33 @@ handover/
 | `api-handler` | ✅ | |
 | `photo-ingest` | ✅ | Hash + timestamp is the integrity story |
 | `diff-worker` | ✅ | With the three-tier fallback |
-| `doc-worker` | ✅ | Condition Report + Demand Letter |
+| `doc-worker` | ✅ | Condition Report + Demand Letter, generated to S3 for download |
 | `clock-sweeper` | ✅ | Small function, carries the entire product thesis |
 | S3 ×2, versioned | ✅ | |
 | DynamoDB single-table | ✅ | |
 | Bedrock | ✅ | |
-| SES | ✅ | **Request production access on day one** |
+| SES / email delivery | ❌ | Cut for the solo build — PDFs are downloaded, not sent (§15.3) |
 | CDK + GitHub Actions | ✅ | |
 | 5 alarms + DLQs | ✅ | |
 
 ## 15.2 What must stay simple
 
-- Three states in the rules table. Not thirty-six.
+- One state in the rules table (`KA`). Not three, not thirty-six — one entry is enough to prove the rules are data-driven rather than hardcoded.
 - One role. No RBAC.
 - Polling for job status. No WebSockets.
-- One PDF template engine, three templates.
+- One PDF template engine. Two templates: the Condition Report (parameterised by phase, so it covers the Exit Report) and the Demand Letter.
 - Sequential room processing inside one `diff-worker` invocation. ≤8 rooms × ~20s is well inside a 300s timeout.
 
 ## 15.3 Explicitly not built
 
-Landlord accounts and the two-sided consent model. Video capture. Offline capture with client-side queue. Payments or escrow of any kind. Analytics dashboards. Multi-property management. E-signature. Any integration with a Rent Authority portal. Notifications beyond email. Mobile native apps. A public API.
+Landlord accounts and the two-sided consent model. Video capture. Offline capture with client-side queue. Payments or escrow of any kind. Analytics dashboards. Multi-property management. E-signature. Any integration with a Rent Authority portal. Mobile native apps. A public API. Account deletion and the 30-day evidence purge.
+
+**Cut for the solo build, not because they are architecturally wrong** — the design below still accommodates them, and the schemas for the send path stay in `packages/shared` unimplemented:
+
+- **SES and all email delivery**, including the SES adapter and its CDK permissions. Documents are generated as PDFs and downloaded by the user.
+- **`POST /v1/tenancies/{id}/documents/{docId}/send`** (§7). Specified, not implemented.
+- **Multi-state rules.** `TN` and `MH` are not seeded; only `KA` ships.
+- **A separate Exit Report template.** Folded into the Condition Report template, parameterised by phase.
 
 ## 15.4 The one shortcut worth taking, and the one that is not
 

@@ -11,22 +11,38 @@ the deposit is withheld.
 deviate from it. When this file and the spec disagree, the spec wins. Section
 references below (§) point into it.
 
+## Scope
+
+- **Solo developer, 4 days.** When in doubt, cut scope rather than add.
+- **SES and all email delivery are cut from the MVP.** Documents are generated
+  as PDFs and downloaded by the user. Do not implement
+  `POST /v1/tenancies/{id}/documents/{docId}/send`, do not write an SES adapter,
+  and do not add SES permissions in CDK. The schemas for that endpoint stay in
+  `packages/shared` — leave them alone, just don't implement against them.
+- **One state rule only: Karnataka (`KA`).** Do not seed Tamil Nadu or
+  Maharashtra. One entry is enough to prove the rules are data-driven rather
+  than hardcoded.
+- **The Exit Report is folded into the Condition Report template.** One PDF
+  template total, parameterised by phase.
+
 ## Constraints
 
-- **2 engineers, 4 days.** Optimise for a working demo, not completeness.
 - Anything listed in **§15.3 "Explicitly not built" must not be built.** That
   includes landlord accounts, video capture, offline capture, payments/escrow,
   analytics dashboards, multi-property management, e-signature, Rent Authority
-  integrations, notifications beyond email, native apps, and a public API.
+  integrations, account deletion and the 30-day purge, native apps, and a public
+  API — plus the solo-build cuts under "Scope" above.
 - Region is `ap-south-1`. Single region, always.
-- Money is **integer paise**. Never a float, anywhere.
+- Money is **integer paise**. Never a float, anywhere. Interest **rates** are
+  integer basis points for the same reason: `600 bps = 6.00% per annum`.
 
 ## Fixed stack — do not substitute
 
 React 18 + TypeScript + Vite + Tailwind · API Gateway HTTP API + Cognito JWT
 authorizer · Lambda Node 20 ARM64 · DynamoDB single-table on-demand · S3
-(versioned) · Bedrock Claude Sonnet · SES · EventBridge · AWS CDK in TypeScript ·
+(versioned) · Bedrock Claude Sonnet · EventBridge · AWS CDK in TypeScript ·
 Zod · Vitest + `aws-sdk-client-mock` · `pdf-lib` · CloudWatch + X-Ray.
+(The spec's stack also lists SES; it is cut for the solo build — see "Scope".)
 
 Not in this system: Redis, SQS/SNS, Step Functions, RDS/Postgres, vector DB,
 embeddings, RAG, fine-tuning, Kubernetes, containers, microservices, WebSockets.
@@ -53,7 +69,8 @@ This is what makes the claim arithmetic unit-testable with no AWS mocking at all
 Item shapes, the diff JSON schema, and the API request/response Zod schemas were
 fixed in Phase 0 (§18) and are consumed by **both** `apps/web` and `apps/api`.
 **Do not change them.** Renegotiating an interface mid-build costs the demo. If a
-change looks unavoidable, stop and raise it with the other engineer first.
+change looks unavoidable, stop and write down the decision before touching the
+code — a solo build has no second reviewer to catch a silent contract drift.
 
 ## Commands
 
@@ -80,4 +97,7 @@ pnpm eval:diff               # golden-set go/no-go gate (§9.5)
   "the lint rule should catch this" — run it, paste the failure. Not "tests
   pass" — paste the run. If you did not execute it, say you did not.
 - Prompts are versioned files in `apps/api/src/prompts/`, never inline strings.
+- **`scaffold.ts` files containing only `export {}` are placeholders** so empty
+  packages typecheck. Delete the file when real code lands in that package.
+  Never import from one.
 - No secret, and no AWS account ID, in this repository. Config goes in SSM.

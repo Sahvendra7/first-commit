@@ -1,9 +1,12 @@
 # State rules — reviewed data, never model output (§9.2, R9)
 
-One JSON file per state code. MVP ships three: `KA`, `TN`, `MH`. Not thirty-six.
+One JSON file per state code. This build ships exactly one: `KA`. One entry is
+enough to prove the rules are data-driven rather than hardcoded; `TN` and `MH`
+are cut for the solo build (CLAUDE.md "Scope").
 
 Fields: `stateCode`, `mtaAdopted`, `depositCapMonths`, `refundWindowDays`,
-`statutoryInterestPct`, `authorityName`, `escalationSteps[]`, `statuteRefs[]`,
+`statutoryInterestBps` (integer basis points — `600 bps = 6.00% per annum`),
+`authorityName`, `escalationSteps[]`, `statuteRefs[]`,
 `lastReviewedAt`.
 
 Statutory references, deadlines, authority names and escalation ladders are
