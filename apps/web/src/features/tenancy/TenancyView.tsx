@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type {
-  ChangeAction,
-  GetDiffResponse,
-  GetTenancyResponse,
-  Phase,
-  RoomDiffView,
+import {
+  TENANCY_STATUSES,
+  type ChangeAction,
+  type GetDiffResponse,
+  type GetTenancyResponse,
+  type Phase,
+  type RoomDiffView,
 } from '@handover/shared';
 import type { HandoverApiClient } from '../../lib/api-client.js';
 import { isRouteNotDeployed, toUserFacingError, type UserFacingError } from '../../lib/errors.js';
@@ -16,6 +17,7 @@ import { CompareSlider } from '../compare/CompareSlider.js';
 import { ChangeMarker } from '../compare/ChangeMarker.js';
 import { ConditionSummary } from '../compare/ConditionSummary.js';
 import { RoomCapture } from '../capture/RoomCapture.js';
+import { Recovery } from '../claim/Recovery.js';
 
 /**
  * One tenancy, end to end: capture -> ingest -> close the phase -> compare ->
@@ -54,6 +56,8 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
   const [reportJobId, setReportJobId] = useState<string>();
   /** True while a change decision is being saved. */
   const [deciding, setDeciding] = useState(false);
+  /** Whether the recovery screen is open over the record. */
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
 
   const load = useCallback(async () => {
     setError(undefined);
@@ -107,6 +111,16 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
   });
 
   const room = rooms.find((r) => r.roomId === roomId);
+
+  /**
+   * The recovery path becomes visible once move-out is closed. Compared by
+   * position in the shared status list so a status added later is included by
+   * construction, the same way `create-claim.ts` reads its own precondition.
+   */
+  const recoveryOffered =
+    tenancy !== undefined &&
+    TENANCY_STATUSES.indexOf(tenancy.tenancy.status) >=
+      TENANCY_STATUSES.indexOf('MOVEOUT_COMPLETE');
 
   /**
    * Leg 2b: S3 has the bytes, the system does not yet have the evidence. Poll
@@ -448,6 +462,20 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
     );
   }
 
+  if (recoveryOpen) {
+    return (
+      <div className="space-y-3">
+        {banners}
+        <Recovery
+          api={api}
+          tenancy={tenancy}
+          onChanged={() => void load()}
+          onBack={() => setRecoveryOpen(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       {banners}
@@ -477,6 +505,25 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
         {...(jobForProgress(reportJob) ? { job: jobForProgress(reportJob)! } : {})}
         busy={capture.kind === 'CLOSING' || reportJob.kind === 'POLLING'}
       />
+
+      {/*
+        Offered from `MOVEOUT_COMPLETE` rather than from `AWAITING_REFUND`, which
+        is where §7 actually permits a claim. The gap is deliberate: between
+        those two states the recovery screen explains *why* a letter cannot be
+        prepared yet, and a tenant who has just finished move-out is exactly the
+        person who wants to know what happens next. The screen itself refuses;
+        this button only opens it.
+      */}
+      {recoveryOffered ? (
+        <button
+          type="button"
+          onClick={() => setRecoveryOpen(true)}
+          data-testid="open-recovery"
+          className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800"
+        >
+          Recover your deposit
+        </button>
+      ) : null}
     </div>
   );
 }
