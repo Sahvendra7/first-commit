@@ -8,7 +8,20 @@ import { ConditionSummary } from './ConditionSummary.js';
 afterEach(cleanup);
 
 const TENANCY = demoTenancy.tenancy;
-const FLAG_OFF_ROOMS = demoDiff.rooms;
+/**
+ * The flag-off world, built explicitly rather than borrowed from `demoDiff`.
+ *
+ * The demo fixture now seeds suggestions, but AI_DISABLED is still what the
+ * real API returns whenever the SSM flag is off — which is the default. These
+ * tests cover that path on its own terms, so it cannot stop being exercised
+ * just because the demo fixture changed.
+ */
+const FLAG_OFF_ROOMS: RoomDiffView[] = demoDiff.rooms.map((room) => ({
+  ...room,
+  changes: [],
+  status: 'NEEDS_REVIEW' as const,
+  reviewReason: 'AI_DISABLED' as const,
+}));
 
 const MODEL_CHANGE: DiffChange = {
   id: 'chg_model_1',

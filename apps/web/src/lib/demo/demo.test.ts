@@ -24,29 +24,62 @@ describe('demo fixtures conform to the frozen contract', () => {
   });
 });
 
-describe('the suggestion layer is flag-off in the fixtures (§8 rule 4)', () => {
-  it('seeds no model changes at all', () => {
+describe('the seeded suggestion layer keeps its safeguards (§9.6, §9.7)', () => {
+  it('seeds suggestions, so the review path is demonstrable', () => {
+    const changes = demoDiff.rooms.flatMap((r) => r.changes);
+    expect(changes.length).toBeGreaterThan(0);
+  });
+
+  it('decides nothing for the tenant — every change is undecided', () => {
     for (const room of demoDiff.rooms) {
-      expect(room.changes).toEqual([]);
+      for (const change of room.changes) {
+        expect(change.tenantAction).toBeUndefined();
+      }
     }
   });
 
-  it('marks every room NEEDS_REVIEW / AI_DISABLED — the production default', () => {
+  it('marks every seeded change as MODEL, never as something the tenant said', () => {
     for (const room of demoDiff.rooms) {
-      expect(room.status).toBe('NEEDS_REVIEW');
-      expect(room.reviewReason).toBe('AI_DISABLED');
+      for (const change of room.changes) {
+        expect(change.source).toBe('MODEL');
+      }
     }
   });
 
-  it('reports needsReviewCount equal to the room count', () => {
-    expect(demoDiff.needsReviewCount).toBe(demoDiff.rooms.length);
-    expect(demoDiff.needsReviewCount).toBe(4);
+  it('carries the provenance the worker attaches in code', () => {
+    for (const room of demoDiff.rooms) {
+      expect(room.modelId).toBe('moonshotai.kimi-k2.5');
+      expect(room.promptVersion).toBe('v2');
+    }
   });
 
-  it('carries no model provenance, because no model ran', () => {
+  /*
+   * The distractor pair. A fixture where the model is right about everything
+   * would misrepresent what was measured, and would remove the one screen that
+   * shows why the layer is flag-off.
+   */
+  it('keeps a low-confidence room routed to NEEDS_REVIEW', () => {
+    const kitchen = demoDiff.rooms.find((r) => r.roomLabel === 'Kitchen');
+    expect(kitchen?.status).toBe('NEEDS_REVIEW');
+    expect(kitchen?.reviewReason).toBe('LOW_CONFIDENCE');
+    for (const change of kitchen?.changes ?? []) {
+      expect(change.confidence).toBeLessThan(0.5);
+    }
+  });
+
+  it('reports needsReviewCount as the real count, not the room count', () => {
+    const expected = demoDiff.rooms.filter((r) => r.status === 'NEEDS_REVIEW').length;
+    expect(demoDiff.needsReviewCount).toBe(expected);
+    expect(demoDiff.needsReviewCount).toBeLessThan(demoDiff.rooms.length);
+  });
+
+  it('never asserts wear and tear as a verdict — both sides, or neither', () => {
     for (const room of demoDiff.rooms) {
-      expect(room.modelId).toBeUndefined();
-      expect(room.promptVersion).toBeUndefined();
+      for (const change of room.changes) {
+        if (!change.wearAndTear) continue;
+        expect(change.wearAndTear.landlordMayArgue.length).toBeGreaterThan(0);
+        expect(change.wearAndTear.tenantsTypicallyCounter.length).toBeGreaterThan(0);
+      }
     }
   });
 });
@@ -103,10 +136,11 @@ describe('demo evidence shape', () => {
   });
 });
 
-describe('DemoApiClient — the tenant-driven path works with an empty diff', () => {
+describe('DemoApiClient — the tenant-driven path sits alongside the suggestions', () => {
   it('appends a tenant addition and returns the server-shaped room', async () => {
     const api = new DemoApiClient();
     const room = (await api.getDiff(DEMO_TENANCY_ID)).rooms[0]!;
+    const before = room.changes.length;
 
     const patched = await api.patchRoomDiff(DEMO_TENANCY_ID, room.roomId, {
       changes: [],
@@ -120,11 +154,13 @@ describe('DemoApiClient — the tenant-driven path works with an empty diff', ()
       ],
     });
 
-    expect(patched.changes).toHaveLength(1);
-    expect(patched.changes[0]!.source).toBe('TENANT');
-    expect(patched.changes[0]!.tenantAction).toBe('ACCEPT');
+    // Appended, not replacing what the model suggested.
+    expect(patched.changes).toHaveLength(before + 1);
+    const added = patched.changes.at(-1)!;
+    expect(added.source).toBe('TENANT');
+    expect(added.tenantAction).toBe('ACCEPT');
     // The server assigns the id — render from the response, never optimistically.
-    expect(patched.changes[0]!.id).toMatch(/^chg_demo_/);
+    expect(added.id).toMatch(/^chg_demo_/);
   });
 
   it('an additions-only PATCH is a complete request', async () => {
@@ -143,6 +179,7 @@ describe('DemoApiClient — the tenant-driven path works with an empty diff', ()
   it('persists additions into subsequent reads, so the demo is interactive', async () => {
     const api = new DemoApiClient();
     const room = (await api.getDiff(DEMO_TENANCY_ID)).rooms[2]!;
+    const before = room.changes.length;
     await api.patchRoomDiff(DEMO_TENANCY_ID, room.roomId, {
       changes: [],
       additions: [
@@ -153,7 +190,7 @@ describe('DemoApiClient — the tenant-driven path works with an empty diff', ()
     const reread = (await api.getDiff(DEMO_TENANCY_ID)).rooms.find(
       (r) => r.roomId === room.roomId,
     )!;
-    expect(reread.changes).toHaveLength(1);
+    expect(reread.changes).toHaveLength(before + 1);
   });
 
   it('does not invent a status transition the real API does not define', async () => {
@@ -165,8 +202,9 @@ describe('DemoApiClient — the tenant-driven path works with an empty diff', ()
         { type: 'DENT', location: 'upper left of the frame', description: 'Dented frame.' },
       ],
     });
-    expect(patched.status).toBe('NEEDS_REVIEW');
-    expect(patched.reviewReason).toBe('AI_DISABLED');
+    // Whatever the room's status was, adding a change must not move it.
+    expect(patched.status).toBe(room.status);
+    expect(patched.reviewReason).toBe(room.reviewReason);
   });
 
   it('404s an unknown room', async () => {
