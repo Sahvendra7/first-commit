@@ -41,6 +41,16 @@ import {
 import type { HandoverApiClient } from '../../lib/api-client.js';
 import { isRouteNotDeployed, toUserFacingError, type UserFacingError } from '../../lib/errors.js';
 import { jobForProgress, useJob } from '../../lib/use-job.js';
+import {
+  Badge,
+  Banner,
+  Button,
+  Field,
+  LinkButton,
+  ProgressTrack,
+  VerifiedGlyph,
+  controlClass,
+} from '../../ui/index.js';
 import { StateRules } from './StateRules.js';
 
 export interface RecoveryProps {
@@ -236,387 +246,424 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
   return (
     <section className={className} aria-labelledby="recovery-heading">
       {onBack ? (
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-11 text-sm font-medium text-sky-700 underline"
-        >
-          ← Back to the record
-        </button>
-      ) : null}
-
-      <h1 id="recovery-heading" className="mt-2 text-lg font-semibold text-slate-900">
-        Recover your deposit
-      </h1>
-      <p className="mt-1 text-sm text-slate-600">
-        {summary.addressLine}, {summary.city}
-      </p>
-
-      {/* ── Facts from the record, not from this screen ─────────────────── */}
-      <dl className="mt-4 space-y-2 rounded-lg border border-slate-200 p-3 text-sm">
-        <div className="flex justify-between gap-3">
-          <dt className="text-slate-600">Deposit held</dt>
-          <dd className="font-semibold text-slate-900" data-testid="deposit-held">
-            {formatRupees(summary.depositPaise)}
-          </dd>
-        </div>
-        {summary.handoverDate ? (
-          <div className="flex justify-between gap-3">
-            <dt className="text-slate-600">Handover</dt>
-            <dd className="font-medium text-slate-900" data-testid="handover-date">
-              {summary.handoverDate}
-            </dd>
-          </div>
-        ) : null}
-        {summary.refundDueDate ? (
-          <div className="flex justify-between gap-3">
-            <dt className="text-slate-600">Refund due by</dt>
-            <dd className="font-medium text-slate-900" data-testid="refund-due">
-              {summary.refundDueDate}
-            </dd>
-          </div>
-        ) : null}
-        <div className="flex justify-between gap-3">
-          <dt className="text-slate-600">Evidence on file</dt>
-          <dd className="font-medium text-slate-900" data-testid="evidence-count">
-            {tenancy.photos.length === 1
-              ? '1 photograph'
-              : `${tenancy.photos.length} photographs`}{' '}
-            across {tenancy.rooms.length === 1 ? '1 room' : `${tenancy.rooms.length} rooms`}
-          </dd>
-        </div>
-      </dl>
-
-      {/* ── Blocked before the form, with the reason ────────────────────── */}
-      {blocker ? (
-        <p
-          role="status"
-          data-testid="claim-blocked"
-          className="mt-4 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-        >
-          {blocker.kind === 'NO_HANDOVER'
-            ? 'A letter needs a handover date on the record. Close the move-out stage first.'
-            : blocker.kind === 'FUTURE_HANDOVER'
-              ? `Handover is recorded for ${blocker.date}, which has not happened yet.`
-              : 'A letter can be prepared once the move-out stage is closed and the refund window has opened.'}
-        </p>
-      ) : null}
-
-      {error ? (
-        <p role="alert" className="mt-4 rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">{error.title}</strong>
-          {error.detail}
-        </p>
-      ) : null}
-
-      {/* ── The claim form ─────────────────────────────────────────────── */}
-      {!blocker && !submitted ? (
-        <form
-          className="mt-4 space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-          noValidate
-        >
-          <div>
-            <label htmlFor="claim-deductions" className="block text-sm font-medium text-slate-800">
-              What did the landlord deduct?
-            </label>
-            <p id="claim-deductions-help" className="text-xs text-slate-500">
-              In rupees. Enter 0 if nothing was deducted.
-            </p>
-            <input
-              id="claim-deductions"
-              name="deductions"
-              type="text"
-              inputMode="decimal"
-              value={deductions}
-              onChange={(event) => setDeductions(event.target.value)}
-              aria-describedby="claim-deductions-help"
-              aria-invalid={touched && errors.deductions ? true : undefined}
-              {...(touched && errors.deductions
-                ? { 'aria-errormessage': 'claim-deductions-error' }
-                : {})}
-              className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+        <Button tone="quiet" size="sm" className="-ml-3" onClick={onBack}>
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
+            <path
+              d="M13 8H4m0 0 3.5-3.5M4 8l3.5 3.5"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-            {touched && errors.deductions ? (
-              <p id="claim-deductions-error" role="alert" className="mt-1 text-xs text-rose-700">
-                {errors.deductions}
-              </p>
+          </svg>
+          Back to the record
+        </Button>
+      ) : null}
+
+      <header className="mt-4">
+        <p className="text-micro font-semibold uppercase text-ink-3">Recovery</p>
+        <h1 id="recovery-heading" className="mt-1 font-display text-title text-ink">
+          Recover your deposit
+        </h1>
+        <p className="mt-1.5 text-sm text-ink-2">
+          {summary.addressLine}, {summary.city}
+        </p>
+      </header>
+
+      <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-8">
+        <div className="min-w-0">
+          {/* ── Facts from the record, not from this screen ─────────────── */}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-5 rounded-2xl border border-line bg-surface p-5 shadow-sm sm:grid-cols-4">
+            <Figure label="Deposit held" testId="deposit-held" emphasis>
+              {formatRupees(summary.depositPaise)}
+            </Figure>
+            {summary.handoverDate ? (
+              <Figure label="Handover" testId="handover-date">
+                {summary.handoverDate}
+              </Figure>
+            ) : null}
+            {summary.refundDueDate ? (
+              <Figure label="Refund due by" testId="refund-due">
+                {summary.refundDueDate}
+              </Figure>
+            ) : null}
+            <Figure label="Evidence on file" testId="evidence-count" small>
+              {`${
+                tenancy.photos.length === 1
+                  ? '1 photograph'
+                  : `${tenancy.photos.length} photographs`
+              } across ${
+                tenancy.rooms.length === 1 ? '1 room' : `${tenancy.rooms.length} rooms`
+              }`}
+            </Figure>
+          </dl>
+
+          <div className="mt-4 space-y-2.5">
+            {/* ── Blocked before the form, with the reason ─────────────── */}
+            {blocker ? (
+              <Banner role="status" tone="info" data-testid="claim-blocked">
+                {blocker.kind === 'NO_HANDOVER'
+                  ? 'A letter needs a handover date on the record. Close the move-out stage first.'
+                  : blocker.kind === 'FUTURE_HANDOVER'
+                    ? `Handover is recorded for ${blocker.date}, which has not happened yet.`
+                    : 'A letter can be prepared once the move-out stage is closed and the refund window has opened.'}
+              </Banner>
+            ) : null}
+
+            {error ? (
+              <Banner role="alert" tone="danger" title={error.title}>
+                {error.detail}
+              </Banner>
             ) : null}
           </div>
 
-          <div>
-            <label htmlFor="claim-reason" className="block text-sm font-medium text-slate-800">
-              Reasons the landlord gave
-            </label>
-            <p id="claim-reason-help" className="text-xs text-slate-500">
-              Optional. Add each reason as they stated it.
-            </p>
-            <div className="mt-1 flex gap-2">
-              <input
-                id="claim-reason"
+          {/* ── The claim form ───────────────────────────────────────── */}
+          {!blocker && !submitted ? (
+            <form
+              className="mt-5 space-y-5 rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submit();
+              }}
+              noValidate
+            >
+              <Field
+                id="claim-deductions"
+                name="deductions"
                 type="text"
-                value={reasonDraft}
-                maxLength={300}
-                onChange={(event) => setReasonDraft(event.target.value)}
-                aria-describedby="claim-reason-help"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    addReason();
-                  }
-                }}
-                className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+                inputMode="decimal"
+                label="What did the landlord deduct?"
+                hint="In rupees. Enter 0 if nothing was deducted."
+                value={deductions}
+                onChange={(event) => setDeductions(event.target.value)}
+                {...(touched && errors.deductions ? { error: errors.deductions } : {})}
               />
-              <button
-                type="button"
-                onClick={addReason}
-                disabled={reasonDraft.trim() === '' || reasons.length >= 20}
-                data-testid="add-reason"
-                className="min-h-11 shrink-0 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-800 disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-            {reasons.length > 0 ? (
-              <ul className="mt-2 space-y-1" data-testid="reason-list">
-                {reasons.map((reason, index) => (
-                  <li
-                    key={`${index}-${reason}`}
-                    className="flex items-start justify-between gap-2 rounded border border-slate-200 px-2 py-1.5 text-sm"
-                  >
-                    <span className="text-slate-800">{reason}</span>
-                    <button
-                      type="button"
-                      onClick={() => setReasons((c) => c.filter((_, i) => i !== index))}
-                      aria-label={`Remove reason: ${reason}`}
-                      className="min-h-11 shrink-0 px-1 text-xs font-semibold text-slate-500 underline"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
 
-          <div>
-            <label htmlFor="claim-received" className="block text-sm font-medium text-slate-800">
-              How much of the deposit have you received back?
-            </label>
-            <p id="claim-received-help" className="text-xs text-slate-500">
-              In rupees. Enter 0 if none of it has been returned.
-            </p>
-            <input
-              id="claim-received"
-              name="received"
-              type="text"
-              inputMode="decimal"
-              value={received}
-              onChange={(event) => setReceived(event.target.value)}
-              aria-describedby="claim-received-help"
-              aria-invalid={touched && errors.received ? true : undefined}
-              {...(touched && errors.received
-                ? { 'aria-errormessage': 'claim-received-error' }
-                : {})}
-              className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
-            />
-            {touched && errors.received ? (
-              <p id="claim-received-error" role="alert" className="mt-1 text-xs text-rose-700">
-                {errors.received}
-              </p>
-            ) : null}
-          </div>
-
-          <div>
-            <label htmlFor="claim-refund-date" className="block text-sm font-medium text-slate-800">
-              When did that arrive?
-            </label>
-            <p id="claim-refund-date-help" className="text-xs text-slate-500">
-              Optional. Leave blank if nothing has been returned.
-            </p>
-            <input
-              id="claim-refund-date"
-              name="refundDate"
-              type="date"
-              value={refundDate}
-              max={todayUtc()}
-              onChange={(event) => setRefundDate(event.target.value)}
-              aria-describedby="claim-refund-date-help"
-              aria-invalid={touched && errors.refundDate ? true : undefined}
-              {...(touched && errors.refundDate
-                ? { 'aria-errormessage': 'claim-refund-date-error' }
-                : {})}
-              className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
-            />
-            {touched && errors.refundDate ? (
-              <p id="claim-refund-date-error" role="alert" className="mt-1 text-xs text-rose-700">
-                {errors.refundDate}
-              </p>
-            ) : null}
-          </div>
-
-          {/*
-            Disabled while submitting, which is what stops a double tap
-            producing a second letter. The server derives the job id from the
-            figures and is idempotent for the same ones, but a UI that lets a
-            tenant fire twice and shows two spinners is still a broken UI.
-          */}
-          <button
-            type="submit"
-            disabled={submitting}
-            data-testid="submit-claim"
-            className="min-h-11 w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {submitting ? 'Preparing…' : 'Prepare my demand letter'}
-          </button>
-
-          <p className="text-xs text-slate-500">
-            The letter is generated from your recorded evidence. The amounts in it are
-            worked out from the figures above and from the deposit on your tenancy record.
-          </p>
-        </form>
-      ) : null}
-
-      {/* ── What was submitted, and the letter that follows ─────────────── */}
-      {submitted ? (
-        <div className="mt-4 space-y-4" data-testid="claim-result">
-          <div className="rounded-lg border border-slate-200 p-3">
-            <h2 className="text-sm font-semibold text-slate-900">Your claim</h2>
-            <dl className="mt-2 space-y-2 text-sm">
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Deposit held</dt>
-                <dd className="font-medium text-slate-900">
-                  {formatRupees(summary.depositPaise)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Deducted by the landlord</dt>
-                <dd className="font-medium text-slate-900" data-testid="result-deductions">
-                  {formatRupees(submitted.deductionsPaise)}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Returned to you</dt>
-                <dd className="font-medium text-slate-900" data-testid="result-received">
-                  {formatRupees(submitted.receivedPaise)}
-                </dd>
-              </div>
-            </dl>
-
-            {submitted.reasons.length > 0 ? (
-              <div className="mt-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Reasons given
-                </h3>
-                <ul className="mt-1 list-inside list-disc text-sm text-slate-700">
-                  {submitted.reasons.map((reason, index) => (
-                    <li key={`${index}-${reason}`}>{reason}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {/*
-              The one figure this screen will not state. See the header: the
-              letter is the artifact that asserts an amount, and two places
-              asserting it is two places that can disagree.
-            */}
-            <p className="mt-3 rounded bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
-              The amount still owed, and any statutory interest on it, are worked out
-              when the letter is prepared and are stated in the letter itself.
-            </p>
-          </div>
-
-          {/* Job lifecycle: queued → running → completed → failed. */}
-          {letterJob.kind === 'POLLING' ? (
-            <div data-testid="letter-progress" className="rounded-lg border border-slate-200 p-3">
-              <p role="status" className="text-sm text-slate-700">
-                Preparing your demand letter…
-              </p>
-              {progress ? (
-                <>
-                  <progress
-                    value={progress.progressDone}
-                    max={Math.max(1, progress.progressTotal)}
-                    className="mt-2 h-2 w-full"
+              <div>
+                <label htmlFor="claim-reason" className="block text-sm font-medium text-ink">
+                  Reasons the landlord gave
+                </label>
+                <p id="claim-reason-help" className="mt-0.5 text-xs text-ink-3">
+                  Optional. Add each reason as they stated it.
+                </p>
+                <div className="mt-1.5 flex gap-2">
+                  <input
+                    id="claim-reason"
+                    type="text"
+                    value={reasonDraft}
+                    maxLength={300}
+                    onChange={(event) => setReasonDraft(event.target.value)}
+                    aria-describedby="claim-reason-help"
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addReason();
+                      }
+                    }}
+                    className={controlClass}
                   />
-                  <p className="mt-1 text-xs text-slate-600">
-                    {progress.progressDone} of {progress.progressTotal} complete
+                  <Button
+                    tone="secondary"
+                    onClick={addReason}
+                    disabled={reasonDraft.trim() === '' || reasons.length >= 20}
+                    data-testid="add-reason"
+                    className="shrink-0"
+                  >
+                    Add
+                  </Button>
+                </div>
+                {reasons.length > 0 ? (
+                  <ul className="mt-2.5 space-y-1.5" data-testid="reason-list">
+                    {reasons.map((reason, index) => (
+                      <li
+                        key={`${index}-${reason}`}
+                        className="flex items-start justify-between gap-2 rounded-xl border border-line bg-sunk px-3 py-2 text-sm"
+                      >
+                        <span className="text-ink-2">{reason}</span>
+                        <button
+                          type="button"
+                          onClick={() => setReasons((c) => c.filter((_, i) => i !== index))}
+                          aria-label={`Remove reason: ${reason}`}
+                          className="min-h-11 shrink-0 px-1 text-xs font-semibold text-ink-3 underline underline-offset-2 hover:text-danger"
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+
+              <Field
+                id="claim-received"
+                name="received"
+                type="text"
+                inputMode="decimal"
+                label="How much of the deposit have you received back?"
+                hint="In rupees. Enter 0 if none of it has been returned."
+                value={received}
+                onChange={(event) => setReceived(event.target.value)}
+                {...(touched && errors.received ? { error: errors.received } : {})}
+              />
+
+              <Field
+                id="claim-refund-date"
+                name="refundDate"
+                type="date"
+                label="When did that arrive?"
+                hint="Optional. Leave blank if nothing has been returned."
+                value={refundDate}
+                max={todayUtc()}
+                onChange={(event) => setRefundDate(event.target.value)}
+                {...(touched && errors.refundDate ? { error: errors.refundDate } : {})}
+              />
+
+              {/*
+                Disabled while submitting, which is what stops a double tap
+                producing a second letter. The server derives the job id from the
+                figures and is idempotent for the same ones, but a UI that lets a
+                tenant fire twice and shows two spinners is still a broken UI.
+              */}
+              <Button
+                type="submit"
+                size="lg"
+                block
+                disabled={submitting}
+                data-testid="submit-claim"
+              >
+                {submitting ? 'Preparing…' : 'Prepare my demand letter'}
+              </Button>
+
+              <p className="text-xs leading-relaxed text-ink-3">
+                The letter is generated from your recorded evidence. The amounts in it are
+                worked out from the figures above and from the deposit on your tenancy
+                record.
+              </p>
+            </form>
+          ) : null}
+
+          {/* ── What was submitted, and the letter that follows ───────── */}
+          {submitted ? (
+            <div className="mt-5 space-y-4" data-testid="claim-result">
+              <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
+                <h2 className="text-heading font-semibold text-ink">Your claim</h2>
+                <dl className="mt-3 divide-y divide-line text-sm">
+                  <Row label="Deposit held">{formatRupees(summary.depositPaise)}</Row>
+                  <Row label="Deducted by the landlord" testId="result-deductions">
+                    {formatRupees(submitted.deductionsPaise)}
+                  </Row>
+                  <Row label="Returned to you" testId="result-received">
+                    {formatRupees(submitted.receivedPaise)}
+                  </Row>
+                </dl>
+
+                {submitted.reasons.length > 0 ? (
+                  <div className="mt-4">
+                    <h3 className="text-micro font-semibold uppercase text-ink-3">
+                      Reasons given
+                    </h3>
+                    <ul className="mt-1.5 list-inside list-disc text-sm text-ink-2">
+                      {submitted.reasons.map((reason, index) => (
+                        <li key={`${index}-${reason}`}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {/*
+                  The one figure this screen will not state. See the header: the
+                  letter is the artifact that asserts an amount, and two places
+                  asserting it is two places that can disagree.
+                */}
+                <p className="mt-4 rounded-xl border border-line bg-sunk px-3 py-2.5 text-xs leading-relaxed text-ink-3">
+                  The amount still owed, and any statutory interest on it, are worked out
+                  when the letter is prepared and are stated in the letter itself.
+                </p>
+              </div>
+
+              {/* Job lifecycle: queued → running → completed → failed. */}
+              {letterJob.kind === 'POLLING' ? (
+                <div
+                  data-testid="letter-progress"
+                  className="rounded-2xl border border-line bg-surface p-5 shadow-sm"
+                >
+                  <p
+                    role="status"
+                    className="flex items-center gap-2 text-sm font-medium text-ink"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand"
+                    />
+                    Preparing your demand letter…
                   </p>
-                </>
+                  {progress ? (
+                    <>
+                      <ProgressTrack
+                        className="mt-3"
+                        done={progress.progressDone}
+                        total={progress.progressTotal}
+                        label="Demand letter progress"
+                      />
+                      <p className="tnum mt-1.5 text-xs text-ink-3">
+                        {progress.progressDone} of {progress.progressTotal} complete
+                      </p>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {letterJob.kind === 'FAILED' ? (
+                <Banner
+                  role="alert"
+                  tone="danger"
+                  title="The letter could not be prepared"
+                  data-testid="letter-failed"
+                >
+                  Your evidence and your recorded changes are unaffected. You can try again.
+                </Banner>
+              ) : null}
+
+              {letterJob.kind === 'STALLED' ? (
+                <Banner
+                  role="status"
+                  tone="warn"
+                  data-testid="letter-stalled"
+                  action={
+                    <Button tone="quiet" size="sm" className="-ml-3" onClick={refreshLetterJob}>
+                      Check again
+                    </Button>
+                  }
+                >
+                  This is taking longer than usual. Nothing has been lost.
+                </Banner>
+              ) : null}
+
+              {letterJob.kind === 'UNAVAILABLE' ? (
+                <Banner role="status" tone="info" data-testid="letter-unavailable">
+                  Your claim was submitted. This deployment cannot report the letter&rsquo;s
+                  progress, so refresh in a moment to find it under Documents.
+                </Banner>
+              ) : null}
+
+              {/*
+                A signed URL is temporary access, not a document. It is rendered
+                straight from the aggregate and never written to storage of any
+                kind — reloading re-reads it, which is the only way it stays valid.
+              */}
+              {letter?.url ? (
+                <div className="rounded-2xl border border-brand-line bg-brand-tint p-5 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <VerifiedGlyph className="mt-0.5 h-5 w-5 shrink-0 text-brand" />
+                    <div className="min-w-0">
+                      <Badge tone="ok">Ready</Badge>
+                      <h2 className="mt-2 font-display text-[1.375rem] leading-tight tracking-[-0.015em] text-ink">
+                        Your demand letter
+                      </h2>
+                      <p className="mt-1.5 text-sm leading-relaxed text-ink-2">
+                        Dated, addressed to your landlord, and built from the evidence on
+                        this record.
+                      </p>
+                    </div>
+                  </div>
+                  <LinkButton
+                    href={letter.url}
+                    download
+                    size="lg"
+                    block
+                    className="mt-4"
+                    data-testid="letter-download"
+                  >
+                    Download your demand letter
+                  </LinkButton>
+                </div>
+              ) : letterJob.kind === 'DONE' ? (
+                <Banner role="status" tone="info">
+                  Your letter is ready. Refresh to download it.
+                </Banner>
+              ) : null}
+
+              {letter ? (
+                <p className="text-xs text-ink-3" data-testid="letter-record-ref">
+                  Record {letter.recordRef}. The download link is temporary — reopen this
+                  page to get a fresh one.
+                </p>
               ) : null}
             </div>
           ) : null}
-
-          {letterJob.kind === 'FAILED' ? (
-            <p role="alert" data-testid="letter-failed" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              <strong className="block">The letter could not be prepared</strong>
-              Your evidence and your recorded changes are unaffected. You can try again.
-            </p>
-          ) : null}
-
-          {letterJob.kind === 'STALLED' ? (
-            <div role="status" data-testid="letter-stalled" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              This is taking longer than usual. Nothing has been lost.
-              <button
-                type="button"
-                onClick={refreshLetterJob}
-                className="mt-1 block min-h-11 font-semibold underline"
-              >
-                Check again
-              </button>
-            </div>
-          ) : null}
-
-          {letterJob.kind === 'UNAVAILABLE' ? (
-            <p role="status" data-testid="letter-unavailable" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
-              Your claim was submitted. This deployment cannot report the letter&rsquo;s
-              progress, so refresh in a moment to find it under Documents.
-            </p>
-          ) : null}
-
-          {/*
-            A signed URL is temporary access, not a document. It is rendered
-            straight from the aggregate and never written to storage of any
-            kind — reloading re-reads it, which is the only way it stays valid.
-          */}
-          {letter?.url ? (
-            <a
-              href={letter.url}
-              download
-              data-testid="letter-download"
-              className="block min-h-11 rounded-lg bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white"
-            >
-              Download your demand letter
-            </a>
-          ) : letterJob.kind === 'DONE' ? (
-            <p role="status" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
-              Your letter is ready. Refresh to download it.
-            </p>
-          ) : null}
-
-          {letter ? (
-            <p className="text-xs text-slate-500" data-testid="letter-record-ref">
-              Record {letter.recordRef}. The download link is temporary — reopen this
-              page to get a fresh one.
-            </p>
-          ) : null}
         </div>
-      ) : null}
 
-      {rules ? (
-        <StateRules rules={rules} className="mt-6 border-t border-slate-200 pt-4" />
-      ) : rulesUnavailable ? (
-        <p
-          className="mt-6 border-t border-slate-200 pt-4 text-xs text-slate-500"
-          data-testid="rules-unavailable"
-        >
-          The deposit rules for {summary.stateCode} could not be loaded.
-        </p>
-      ) : null}
+        {/*
+          The legal reference is subordinate by construction: it sits in the
+          rail, not in the flow of the claim, and it is the last thing on the
+          page on a phone. It informs the claim; it does not authorise it.
+        */}
+        <aside className="mt-8 lg:mt-0">
+          {rules ? (
+            <StateRules rules={rules} />
+          ) : rulesUnavailable ? (
+            <p
+              className="rounded-2xl border border-line bg-sunk px-4 py-3 text-xs text-ink-3"
+              data-testid="rules-unavailable"
+            >
+              The deposit rules for {summary.stateCode} could not be loaded.
+            </p>
+          ) : null}
+        </aside>
+      </div>
     </section>
+  );
+}
+
+/** One fact from the record, in the facts strip. */
+function Figure({
+  label,
+  testId,
+  emphasis,
+  small,
+  children,
+}: {
+  readonly label: string;
+  readonly testId: string;
+  readonly emphasis?: boolean;
+  readonly small?: boolean;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-micro font-semibold uppercase text-ink-3">{label}</dt>
+      <dd
+        data-testid={testId}
+        className={[
+          'tnum mt-1 font-semibold text-ink',
+          small ? 'text-xs leading-snug' : emphasis ? 'text-[1.0625rem]' : 'text-sm',
+        ].join(' ')}
+      >
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+/** One line of the submitted claim. */
+function Row({
+  label,
+  testId,
+  children,
+}: {
+  readonly label: string;
+  readonly testId?: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-2.5">
+      <dt className="text-ink-2">{label}</dt>
+      <dd
+        className="tnum font-semibold text-ink"
+        {...(testId ? { 'data-testid': testId } : {})}
+      >
+        {children}
+      </dd>
+    </div>
   );
 }
