@@ -41,7 +41,12 @@ import { ApiError, NetworkError, type HandoverApiClient } from '../api-client.js
 import { demoDiff } from './diff.js';
 import { DemoJobs } from './jobs.js';
 import { demoStateRules } from './state-rules.js';
-import { DEMO_TENANCY_ID, DEMO_URL_EXPIRES_AT, demoTenancy } from './tenancy.js';
+import {
+  DEMO_TENANCY_ID,
+  DEMO_URL_EXPIRES_AT,
+  demoDemandLetter,
+  demoTenancy,
+} from './tenancy.js';
 
 function problem(status: number, code: Problem['code'], title: string, detail?: string): Problem {
   return { type: 'about:blank', title, status, code, ...(detail ? { detail } : {}) };
@@ -163,7 +168,28 @@ export class DemoApiClient implements HandoverApiClient {
     await this.#tick();
     const job = this.#jobs.advance(jobId);
     if (!job) throw new ApiError(problem(404, 'NOT_FOUND', 'No such job'));
+
+    /*
+     * A document job that has finished has produced a document, and the real
+     * API reflects that in the aggregate. Without this the demo's letter job
+     * reached DONE and then nothing ever appeared to download — the walkthrough
+     * stopped one step short of the thing the product is for.
+     *
+     * Keyed on `resultRef` so re-polling a finished job is idempotent.
+     */
+    if (job.status === 'DONE' && job.type === 'LETTER' && job.resultRef) {
+      this.#ensureLetterDocument(job.resultRef);
+    }
     return job;
+  }
+
+  /** Appends the demo demand letter to the aggregate, once. */
+  #ensureLetterDocument(documentId: string): void {
+    if (this.#tenancy.documents.some((doc) => doc.documentId === documentId)) return;
+    this.#tenancy = {
+      ...this.#tenancy,
+      documents: [...this.#tenancy.documents, demoDemandLetter(documentId)],
+    };
   }
 
   async getTenancy(tenancyId: string): Promise<GetTenancyResponse> {

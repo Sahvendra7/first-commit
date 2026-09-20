@@ -95,10 +95,28 @@ const CONDITION_REPORT: DocumentRef = {
   // are always absent in this build too.
 };
 
+/**
+ * The demand letter the demo produces once its LETTER job finishes.
+ *
+ * A function rather than a constant because the document id comes from the
+ * job's `resultRef`, exactly as it does from the real API.
+ */
+export function demoDemandLetter(documentId: string): DocumentRef {
+  return {
+    documentId,
+    docType: 'DEMAND_LETTER',
+    sha256: fixtureDigest(documentId),
+    recordRef: 'HANDOVER-2025-09-02-KA-0002',
+    createdAt: '2026-09-20T09:00:00.000Z',
+    url: demoAssetUrl('/demo/demand-letter.pdf'),
+    urlExpiresAt: DEMO_URL_EXPIRES_AT,
+  };
+}
+
 export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
   tenancy: {
     tenancyId: DEMO_TENANCY_ID,
-    status: 'MOVEOUT_COMPLETE',
+    status: 'AWAITING_REFUND',
     addressLine: '4B, Nandi Residency, 12th Main',
     city: 'Bengaluru',
     stateCode: 'KA',

@@ -3,8 +3,10 @@
  *
  * §10.2 is explicit: "No custom auth. No password handling in application code
  * — ever." This module is the smallest thing that honours that against the
- * deployed pool, and it does exactly four things: sign in, answer a forced
- * password change, hand out a current ID token, and sign out.
+ * deployed pool: register, confirm a registration, sign in, answer a forced
+ * password change, hand out a current ID token, and sign out. Every one of
+ * those is a call into `amazon-cognito-identity-js`; none of them inspects,
+ * stores or forwards a password.
  *
  * Three properties of the deployed stack decide the shape, and each was read
  * from `infra/cdk/lib/auth-stack.ts` rather than assumed:
@@ -24,6 +26,7 @@
 import {
   AuthenticationDetails,
   CognitoUser,
+  CognitoUserAttribute,
   CognitoUserPool,
   CognitoUserSession,
 } from 'amazon-cognito-identity-js';
@@ -68,6 +71,20 @@ function messageFor(error: unknown): { code: string; message: string } {
       // preventUserExistenceErrors is on, so this should not surface; the copy
       // matches NotAuthorized anyway so the two cannot be told apart.
       return { code, message: 'That email address and password do not match.' };
+    case 'UsernameExistsException':
+      return { code, message: 'An account already exists for that email address.' };
+    case 'InvalidPasswordException':
+      return {
+        code,
+        message:
+          'Choose a password of at least 12 characters, with an uppercase letter, a lowercase letter and a digit.',
+      };
+    case 'InvalidParameterException':
+      return { code, message: 'Check the email address and password and try again.' };
+    case 'CodeMismatchException':
+      return { code, message: 'That code is not right. Check it and try again.' };
+    case 'ExpiredCodeException':
+      return { code, message: 'That code has expired. Ask for a new one.' };
     case 'UserNotConfirmedException':
       return { code, message: 'This account has not been verified yet. Check your email.' };
     case 'PasswordResetRequiredException':
@@ -109,6 +126,72 @@ export class CognitoAuth {
     const email = typeof payload['email'] === 'string' ? payload['email'] : '';
     const sub = typeof payload['sub'] === 'string' ? payload['sub'] : '';
     return { email, sub };
+  }
+
+  /**
+   * Registers a new account. `selfSignUpEnabled` is true on the deployed pool
+   * and `autoVerify: { email: true }` means Cognito emails a six-digit code,
+   * so a registration is not usable until `confirmSignUp` runs.
+   *
+   * Resolves to whether confirmation is still outstanding, rather than to a
+   * session: there is no session yet, and returning one would be a lie.
+   */
+  signUp(email: string, password: string): Promise<{ confirmed: boolean }> {
+    return new Promise((resolve, reject) => {
+      this.#pool.signUp(
+        email,
+        password,
+        // `email` is a required, immutable standard attribute on the pool.
+        [new CognitoUserAttribute({ Name: 'email', Value: email })],
+        [],
+        (error, result) => {
+          if (error || !result) {
+            const { code, message } = messageFor(error);
+            reject(new AuthError(code, message));
+            return;
+          }
+          resolve({ confirmed: result.userConfirmed === true });
+        },
+      );
+    });
+  }
+
+  /** Answers the emailed verification code. */
+  confirmSignUp(email: string, code: string): Promise<void> {
+    const user = new CognitoUser({
+      Username: email,
+      Pool: this.#pool,
+      Storage: this.#storage,
+    });
+    return new Promise((resolve, reject) => {
+      user.confirmRegistration(code, true, (error) => {
+        if (error) {
+          const { code: errorCode, message } = messageFor(error);
+          reject(new AuthError(errorCode, message));
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+
+  /** Sends a fresh verification code to an unconfirmed account. */
+  resendConfirmationCode(email: string): Promise<void> {
+    const user = new CognitoUser({
+      Username: email,
+      Pool: this.#pool,
+      Storage: this.#storage,
+    });
+    return new Promise((resolve, reject) => {
+      user.resendConfirmationCode((error) => {
+        if (error) {
+          const { code, message } = messageFor(error);
+          reject(new AuthError(code, message));
+          return;
+        }
+        resolve();
+      });
+    });
   }
 
   signIn(email: string, password: string): Promise<AuthUser> {

@@ -1,0 +1,74 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 886 >>
+stream
+BT
+/F1 20 Tf
+1 0 0 1 56 752 Tm
+(Condition Report) Tj
+ET
+BT
+/F1 12 Tf
+0.86 0.20 0.27 rg
+1 0 0 1 56 722 Tm
+(DEMO PLACEHOLDER - NOT A REAL DOCUMENT AND NOT EVIDENCE) Tj
+ET
+BT
+/F1 11 Tf
+0 g
+1 0 0 1 56 682 Tm
+14 TL
+(Record  HANDOVER-2025-09-02-KA-0001) Tj
+T*
+(Property  4B, Nandi Residency, 12th Main, Bengaluru) Tj
+T*
+() Tj
+T*
+(This file is a fixture shipped with the offline walkthrough \(?demo=1\).) Tj
+T*
+(It is not generated from evidence and it carries no real hashes.) Tj
+T*
+() Tj
+T*
+(The real Condition Report is rendered server-side from stored) Tj
+T*
+(photographs. It lists every photograph with the time the server) Tj
+T*
+(received it and the SHA-256 digest of its bytes, so any later) Tj
+T*
+(alteration of the file is detectable.) Tj
+T*
+() Tj
+T*
+(This product records evidence. It does not provide legal advice and) Tj
+T*
+(makes no claim about admissibility or outcome.) Tj
+T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000001178 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1248
+%%EOF
