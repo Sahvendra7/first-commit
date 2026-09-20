@@ -94,6 +94,8 @@ export async function signDocumentGet(s3Key: string, now: Date): Promise<Resolve
  * PDF can be rebuilt from the ledger at any time. An unreadable *photograph*
  * is a hole in the record, which is why `signEvidenceGets` refuses to shrug at
  * one; an unreadable report is an inconvenience.
+ *
+ * Absent is not the same as unnoticed, though, so each failure is logged.
  */
 export async function signDocumentGets(
   s3Keys: readonly string[],
@@ -103,7 +105,15 @@ export async function signDocumentGets(
     s3Keys.map(async (s3Key) => {
       try {
         return [s3Key, await signDocumentGet(s3Key, now)] as const;
-      } catch {
+      } catch (error) {
+        // Absent, but not unnoticed. A document nobody can download is still an
+        // operational fact, and a bare `catch {}` is how that fact disappears.
+        // The key stays out of the line — it carries the tenancy id (§10.1) —
+        // so the digest of it is what an operator correlates against.
+        console.error('document_unsignable', {
+          keyDigest: createHash('sha256').update(s3Key).digest('hex').slice(0, 12),
+          error: (error as Error)?.name ?? 'unknown',
+        });
         return undefined;
       }
     }),
