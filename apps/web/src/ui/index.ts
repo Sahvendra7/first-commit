@@ -7,6 +7,8 @@
  */
 export { Button, LinkButton, buttonClass } from './Button.js';
 export type { ButtonProps, ButtonSize, ButtonTone, LinkButtonProps } from './Button.js';
+export { AppShell } from './AppShell.js';
+export type { AppShellProps, ShellWidth } from './AppShell.js';
 export { Badge } from './Badge.js';
 export type { BadgeProps, BadgeTone } from './Badge.js';
 export { Banner } from './Banner.js';
