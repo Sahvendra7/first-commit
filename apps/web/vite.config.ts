@@ -6,7 +6,10 @@ export default defineConfig({
   server: { port: 5173 },
   // Frontend runs against deployed dev infrastructure — no LocalStack (§13.2).
   test: {
-    environment: 'node',
+    // Components in this app are drag-, canvas- and file-input-driven; the
+    // logic that matters cannot be exercised without a DOM.
+    environment: 'jsdom',
+    setupFiles: ['./test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
   },
 });
