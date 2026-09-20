@@ -113,6 +113,11 @@ export function demoDemandLetter(documentId: string): DocumentRef {
   };
 }
 
+/** How many seeded photographs a room holds for a phase. */
+function countPhotos(roomId: string, phase: PhotoRef['phase']): number {
+  return DEMO_PHOTOS.filter((p) => p.roomId === roomId && p.phase === phase).length;
+}
+
 export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
   tenancy: {
     tenancyId: DEMO_TENANCY_ID,
@@ -129,12 +134,19 @@ export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
     landlordEmail: 'landlord@example.com',
     createdAt: '2025-09-02T08:55:00.000Z',
   },
+  /*
+   * Counted from `DEMO_PHOTOS` rather than written down, so the header's
+   * "evidence on file" and the per-room counts cannot disagree. Hard-coding
+   * these to zero left the record claiming sixteen photographs while every room
+   * reported none, and `completePhase` then refused to close the stage with
+   * "nothing to submit yet" — the walkthrough dead-ended on its own CTA.
+   */
   rooms: DEMO_ROOMS.map((room) => ({
     roomId: room.roomId,
     label: room.label,
     orderIndex: room.orderIndex,
-    photoCountMovein: 0,
-    photoCountMoveout: 0,
+    photoCountMovein: countPhotos(room.roomId, 'MOVEIN'),
+    photoCountMoveout: countPhotos(room.roomId, 'MOVEOUT'),
   })),
   photos: DEMO_PHOTOS,
   // Note: RoomDiff, not RoomDiffView — the aggregate carries no before/after.

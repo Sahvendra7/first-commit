@@ -115,13 +115,29 @@ describe('demo evidence shape', () => {
    * ingested so far and begin at zero; `photos` is the pool the later comparison
    * draws from. `DemoApiClient.presignPhotos` is what moves the counts up.
    */
-  it('opens with nothing captured, so the journey starts at the beginning', () => {
+  it('opens at move-in with no document yet, so the journey starts at the top', () => {
     expect(demoTenancy.tenancy.status).toBe('MOVEIN_PENDING');
-    for (const room of demoTenancy.rooms) {
-      expect(room.photoCountMovein).toBe(0);
-      expect(room.photoCountMoveout).toBe(0);
-    }
     expect(demoTenancy.documents).toEqual([]);
+  });
+
+  /*
+   * `completePhase` refuses to close a stage with nothing in it, so a room whose
+   * count is zero dead-ends the walkthrough on its own primary button. Counting
+   * from the seeded photos is what keeps the header's total and the per-room
+   * counts from disagreeing.
+   */
+  it('counts the photographs it actually seeds, so the stage can be closed', () => {
+    for (const room of demoTenancy.rooms) {
+      const movein = demoTenancy.photos.filter(
+        (p) => p.roomId === room.roomId && p.phase === 'MOVEIN',
+      ).length;
+      const moveout = demoTenancy.photos.filter(
+        (p) => p.roomId === room.roomId && p.phase === 'MOVEOUT',
+      ).length;
+      expect(room.photoCountMovein).toBe(movein);
+      expect(room.photoCountMoveout).toBe(moveout);
+      expect(room.photoCountMovein).toBeGreaterThan(0);
+    }
   });
 
   it('still carries a full paired photo pool for the comparison', () => {
