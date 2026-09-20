@@ -489,12 +489,12 @@ describe('CORS (§5.1)', () => {
    * A stack synthesised with a given allow-list. Its own app and outdir, so it
    * cannot disturb the shared template the rest of this file asserts against.
    */
-  const withOrigins = (webOrigins?: readonly string[]): Template => {
+  const synth = (id: string, webOrigins?: readonly string[]): Template => {
     const app = new App({ outdir: mkdtempSync(join(tmpdir(), 'handover-cors-test-')) });
     const env = { account: '123456789012', region: 'ap-south-1' };
-    const auth = new AuthStack(app, 'CorsAuth', { env });
+    const auth = new AuthStack(app, `${id}Auth`, { env });
     return Template.fromStack(
-      new ApiStack(app, 'CorsApi', {
+      new ApiStack(app, `${id}Api`, {
         env,
         tableName: 'test-table',
         evidenceBucketName: 'test-evidence',
@@ -506,6 +506,22 @@ describe('CORS (§5.1)', () => {
     );
   };
 
+  /*
+   * Synthesised once, in a hook, for the same reason the shared template at
+   * the top of this file is: synthesising an `ApiStack` bundles every Lambda
+   * in it with esbuild, which takes far longer than vitest's 5s default test
+   * timeout — `hookTimeout` is the 30s budget, and `testTimeout` is not.
+   * Building these inside the `it` bodies timed out, and built the same two
+   * stacks three times over to do it.
+   */
+  let withOrigin: Template;
+  let withoutOrigin: Template;
+
+  beforeAll(() => {
+    withOrigin = synth('CorsSet', ['https://main.example.amplifyapp.com']);
+    withoutOrigin = synth('CorsUnset');
+  });
+
   it('allows the methods the frontend actually issues', () => {
     template.hasResourceProperties('AWS::ApiGatewayV2::Api', {
       CorsConfiguration: Match.objectLike({
@@ -515,9 +531,7 @@ describe('CORS (§5.1)', () => {
   });
 
   it('never allows a wildcard origin', () => {
-    const origins = withOrigins(['https://main.example.amplifyapp.com']).findResources(
-      'AWS::ApiGatewayV2::Api',
-    );
+    const origins = withOrigin.findResources('AWS::ApiGatewayV2::Api');
     const config = Object.values(origins)[0] as {
       Properties: { CorsConfiguration: { AllowOrigins: string[] } };
     };
@@ -533,13 +547,11 @@ describe('CORS (§5.1)', () => {
    * step that sets it.
    */
   it('publishes the deployed origin as an output, so a redeploy can carry it forward', () => {
-    withOrigins(['https://main.example.amplifyapp.com']).hasOutput('WebOrigins', {
-      Value: 'https://main.example.amplifyapp.com',
-    });
+    withOrigin.hasOutput('WebOrigins', { Value: 'https://main.example.amplifyapp.com' });
   });
 
   it('publishes no such output before a front end exists', () => {
-    const outputs = withOrigins().findOutputs('*');
+    const outputs = withoutOrigin.findOutputs('*');
 
     expect(Object.keys(outputs)).not.toContain('WebOrigins');
   });
