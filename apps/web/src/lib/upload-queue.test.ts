@@ -308,3 +308,159 @@ describe('UploadQueue — lifecycle', () => {
     expect(queue.photos).toHaveLength(0);
   });
 });
+
+describe('UploadQueue — per-operation accounting (server reconciliation)', () => {
+  /**
+   * Regression: `uploadedCount` is cumulative, so feeding it to a caller that
+   * computes `serverCountBefore + sent` over-counted on every operation after
+   * the first, producing an expected count the server could never reach and a
+   * false ingestion timeout.
+   */
+  it('(a) two sequential selections each report only their own uploads', async () => {
+    const { queue } = makeQueue();
+
+    const first = await queue.add([file('a.jpg'), file('b.jpg')]);
+    const second = await queue.add([file('c.jpg')]);
+
+    expect(first).toBe(2);
+    expect(second).toBe(1);
+    // The cumulative total is still available, and is still 3.
+    expect(queue.uploadedCount).toBe(3);
+  });
+
+  it('(a) the second selection does not re-report the first', async () => {
+    const { queue } = makeQueue();
+    await queue.add([file('a.jpg'), file('b.jpg'), file('c.jpg')]);
+
+    const second = await queue.add([file('d.jpg')]);
+
+    expect(second).toBe(1);
+    expect(second).not.toBe(queue.uploadedCount);
+  });
+
+  it('(b) a retry after one failure reports exactly one new upload', async () => {
+    const api = new DemoApiClient();
+    const real = api.uploadPhoto.bind(api);
+    let failing = true;
+    vi.spyOn(api, 'uploadPhoto').mockImplementation(async (upload, blob, options) => {
+      if (failing) throw new Error('network down');
+      return real(upload, blob, options);
+    });
+    const { queue } = makeQueue({ api, maxAttempts: 1 });
+
+    const added = await queue.add([file('a.jpg')]);
+    expect(added).toBe(0);
+
+    failing = false;
+    const retried = await queue.retry(queue.photos[0]!.clientRef);
+
+    expect(retried).toBe(1);
+    expect(queue.uploadedCount).toBe(1);
+  });
+
+  it('(b) retrying a photo that already succeeded reports zero', async () => {
+    const { queue } = makeQueue();
+    await queue.add([file('a.jpg')]);
+
+    const again = await queue.retry(queue.photos[0]!.clientRef);
+
+    expect(again).toBe(0);
+    expect(queue.uploadedCount).toBe(1);
+  });
+
+  it('(c) retryAll after partial success reports only the recovered photos', async () => {
+    const api = new DemoApiClient();
+    const real = api.uploadPhoto.bind(api);
+    // Two of three fail on the first pass.
+    const cursed = new Set(['002', '003']);
+    let failing = true;
+    vi.spyOn(api, 'uploadPhoto').mockImplementation(async (upload, blob, options) => {
+      const suffix = upload.clientRef.slice(-3);
+      if (failing && cursed.has(suffix)) throw new Error('network down');
+      return real(upload, blob, options);
+    });
+    const { queue } = makeQueue({ api, maxAttempts: 1 });
+
+    const added = await queue.add([file('a.jpg'), file('b.jpg'), file('c.jpg')]);
+    expect(added).toBe(1);
+
+    failing = false;
+    const recovered = await queue.retryAll();
+
+    // Only the two that had failed — not all three.
+    expect(recovered).toBe(2);
+    expect(queue.uploadedCount).toBe(3);
+  });
+
+  it('(c) retryAll with nothing failed reports zero', async () => {
+    const { queue } = makeQueue();
+    await queue.add([file('a.jpg'), file('b.jpg')]);
+
+    expect(await queue.retryAll()).toBe(0);
+  });
+
+  it('(d) sums of per-operation counts equal the server-visible total', async () => {
+    const api = new DemoApiClient();
+    const real = api.uploadPhoto.bind(api);
+    let failing = true;
+    vi.spyOn(api, 'uploadPhoto').mockImplementation(async (upload, blob, options) => {
+      if (failing && upload.clientRef.endsWith('002')) throw new Error('network down');
+      return real(upload, blob, options);
+    });
+    const { queue } = makeQueue({ api, maxAttempts: 1 });
+
+    // A caller that adds each reported delta to the count it read beforehand
+    // must arrive at exactly the number of objects S3 holds.
+    let reconciled = 0;
+    reconciled += await queue.add([file('a.jpg'), file('b.jpg')]);
+    failing = false;
+    reconciled += await queue.retryAll();
+    reconciled += await queue.add([file('c.jpg')]);
+
+    expect(reconciled).toBe(3);
+    expect(reconciled).toBe(queue.uploadedCount);
+  });
+
+  it('(d) a cumulative count would have over-shot — the delta does not', async () => {
+    const { queue } = makeQueue();
+
+    // Simulates the reconciliation TenancyView performs.
+    let serverCount = 0;
+    const firstDelta = await queue.add([file('a.jpg'), file('b.jpg')]);
+    let expected = serverCount + firstDelta;
+    serverCount = queue.uploadedCount; // the server ingested both
+    expect(expected).toBe(serverCount);
+
+    const secondDelta = await queue.add([file('c.jpg')]);
+    expected = serverCount + secondDelta;
+    serverCount = queue.uploadedCount;
+
+    // 2 + 1 === 3, not 2 + 3 === 5. The latter is a timeout that never resolves.
+    expect(expected).toBe(3);
+    expect(expected).toBe(serverCount);
+    expect(expected).not.toBe(serverCount + queue.uploadedCount);
+  });
+
+  it('reports zero for an empty selection', async () => {
+    const { queue } = makeQueue();
+    expect(await queue.add([])).toBe(0);
+  });
+
+  it('reports zero once disposed', async () => {
+    const { queue } = makeQueue();
+    queue.dispose();
+    expect(await queue.add([file('a.jpg')])).toBe(0);
+  });
+
+  it('counts only what landed when part of a selection fails outright', async () => {
+    const api = new DemoApiClient();
+    const real = api.uploadPhoto.bind(api);
+    vi.spyOn(api, 'uploadPhoto').mockImplementation(async (upload, blob, options) => {
+      if (upload.clientRef.endsWith('002')) throw new Error('permanently cursed');
+      return real(upload, blob, options);
+    });
+    const { queue } = makeQueue({ api, maxAttempts: 1 });
+
+    expect(await queue.add([file('a.jpg'), file('b.jpg'), file('c.jpg')])).toBe(2);
+  });
+});

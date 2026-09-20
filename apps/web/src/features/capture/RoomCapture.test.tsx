@@ -249,6 +249,61 @@ describe('RoomCapture — batching and callbacks', () => {
     await waitFor(() => expect(onUploaded).toHaveBeenCalledWith(2));
   });
 
+  /**
+   * Regression: this callback used to forward the queue's cumulative
+   * `uploadedCount`. A caller reconciling it against the server's room counter
+   * as `countBefore + sent` over-counted from the second selection onward and
+   * waited for photographs that were never coming.
+   */
+  it('reports only the photographs of the current selection, not the running total', async () => {
+    const onUploaded = vi.fn();
+    const { input } = renderCapture({ onUploaded });
+
+    await selectFiles(input, [photo('a.jpg'), photo('b.jpg')]);
+    await waitFor(() => expect(onUploaded).toHaveBeenLastCalledWith(2));
+
+    await selectFiles(input, [photo('c.jpg')]);
+    await waitFor(() => expect(onUploaded).toHaveBeenLastCalledWith(1));
+
+    // Three photographs are on screen as sent; the last report is still 1.
+    await waitFor(() => expect(screen.getAllByText('Sent')).toHaveLength(3));
+    expect(onUploaded).toHaveBeenLastCalledWith(1);
+  });
+
+  it('reports zero when a whole selection fails, so nothing is expected of the server', async () => {
+    const api = new DemoApiClient();
+    vi.spyOn(api, 'uploadPhoto').mockRejectedValue(new Error('network unreachable'));
+    const onUploaded = vi.fn();
+    const { input } = renderCapture({ api, onUploaded });
+
+    await selectFiles(input, [photo('a.jpg')]);
+
+    await waitFor(() => expect(onUploaded).toHaveBeenCalledWith(0), { timeout: 8000 });
+  });
+
+  it('reports only the recovered photographs after a retry', async () => {
+    const api = new DemoApiClient();
+    const real = api.uploadPhoto.bind(api);
+    let failing = true;
+    vi.spyOn(api, 'uploadPhoto').mockImplementation(async (upload, blob, options) => {
+      if (failing) throw new Error('network unreachable');
+      return real(upload, blob, options);
+    });
+    const onUploaded = vi.fn();
+    const { input } = renderCapture({ api, onUploaded });
+
+    await selectFiles(input, [photo('a.jpg')]);
+    await waitFor(() => expect(screen.getByText('Not sent')).toBeDefined(), { timeout: 8000 });
+    expect(onUploaded).toHaveBeenLastCalledWith(0);
+
+    failing = false;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    });
+
+    await waitFor(() => expect(onUploaded).toHaveBeenLastCalledWith(1));
+  });
+
   it('ignores an empty selection', async () => {
     const onUploaded = vi.fn();
     const { input } = renderCapture({ onUploaded });

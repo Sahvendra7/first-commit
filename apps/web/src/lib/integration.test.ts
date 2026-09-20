@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { GetTenancyResponse } from '@handover/shared';
+import type { GetTenancyResponse, PhotoRef } from '@handover/shared';
 import { ApiError, NetworkError, createApiClient, isDemoMode } from './api-client.js';
 import { DemoApiClient } from './demo/client.js';
 import { demoTenancy, DEMO_TENANCY_ID } from './demo/tenancy.js';
 import { awaitIngest, countFor } from './ingest.js';
-import { pairsForRoom, resolveRooms, roomsFromAggregate } from './pairing.js';
+import {
+  firstMatchedPair,
+  matchedPairs,
+  missingPairReason,
+  pairsForRoom,
+  resolveRooms,
+  roomsFromAggregate,
+} from './pairing.js';
 import { isRouteNotDeployed, toUserFacingError } from './errors.js';
 import { AuthError } from './auth/cognito-auth.js';
 import { MemoryStorage } from './auth/memory-storage.js';
@@ -280,5 +287,104 @@ describe('auth session storage', () => {
 
   it('returns null for an unknown key, as the library expects', () => {
     expect(new MemoryStorage().getItem('nope')).toBeNull();
+  });
+});
+
+describe('pairIndex matching (regression)', () => {
+  const photo = (
+    phase: 'MOVEIN' | 'MOVEOUT',
+    pairIndex: number,
+    roomId = 'rm_1',
+  ): PhotoRef => ({
+    photoId: `ph_${phase}_${pairIndex}`,
+    roomId,
+    phase,
+    pairIndex,
+    sha256: 'a'.repeat(64),
+    bytes: 1000,
+    receivedAt: '2026-09-15T10:00:00.000Z',
+    url: `https://example.invalid/${phase}-${pairIndex}.jpg`,
+    urlExpiresAt: '2099-01-01T00:00:00.000Z',
+  });
+
+  it('joins only on a shared pairIndex', () => {
+    const pairs = matchedPairs(
+      [photo('MOVEIN', 0), photo('MOVEIN', 1)],
+      [photo('MOVEOUT', 0), photo('MOVEOUT', 1)],
+    );
+    expect(pairs.map((p) => p.pairIndex)).toEqual([0, 1]);
+    for (const pair of pairs) {
+      expect(pair.before.pairIndex).toBe(pair.after.pairIndex);
+    }
+  });
+
+  it('never compares pairIndex 0 against pairIndex 1 when move-in 0 is missing', () => {
+    // before: [1]  after: [0, 1]  — the bug paired before[0](=1) with after[0](=0).
+    const pairs = matchedPairs([photo('MOVEIN', 1)], [photo('MOVEOUT', 0), photo('MOVEOUT', 1)]);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]!.pairIndex).toBe(1);
+    expect(pairs[0]!.before.pairIndex).toBe(1);
+    expect(pairs[0]!.after.pairIndex).toBe(1);
+  });
+
+  it('never compares pairIndex 0 against pairIndex 1 when move-out 0 is missing', () => {
+    const pairs = matchedPairs([photo('MOVEIN', 0), photo('MOVEIN', 1)], [photo('MOVEOUT', 1)]);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]!.pairIndex).toBe(1);
+  });
+
+  it('yields no pair at all when the two sides share no index', () => {
+    const pairs = matchedPairs([photo('MOVEIN', 0)], [photo('MOVEOUT', 1)]);
+    expect(pairs).toEqual([]);
+    expect(firstMatchedPair({ before: [photo('MOVEIN', 0)], after: [photo('MOVEOUT', 1)] })).toBeUndefined();
+  });
+
+  it('picks the lowest shared index, not the lowest index on either side', () => {
+    const pair = firstMatchedPair({
+      before: [photo('MOVEIN', 0), photo('MOVEIN', 2)],
+      after: [photo('MOVEOUT', 1), photo('MOVEOUT', 2)],
+    });
+    expect(pair?.pairIndex).toBe(2);
+  });
+
+  it('matches regardless of the order the photos arrive in', () => {
+    const pairs = matchedPairs(
+      [photo('MOVEIN', 2), photo('MOVEIN', 0)],
+      [photo('MOVEOUT', 0), photo('MOVEOUT', 2)],
+    );
+    expect(pairs.map((p) => p.pairIndex)).toEqual([0, 2]);
+  });
+
+  it('drops an unmatched index rather than pairing it with a neighbour', () => {
+    const pairs = matchedPairs(
+      [photo('MOVEIN', 0), photo('MOVEIN', 5)],
+      [photo('MOVEOUT', 0)],
+    );
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]!.pairIndex).toBe(0);
+  });
+
+  it('reports why there is no comparison, so the UI can say which case it is', () => {
+    expect(missingPairReason({ before: [], after: [] })).toBe('NO_PHOTOS');
+    expect(missingPairReason({ before: [photo('MOVEIN', 0)], after: [] })).toBe('NO_AFTER');
+    expect(missingPairReason({ before: [], after: [photo('MOVEOUT', 0)] })).toBe('NO_BEFORE');
+    expect(
+      missingPairReason({ before: [photo('MOVEIN', 0)], after: [photo('MOVEOUT', 1)] }),
+    ).toBe('NO_SHARED_PAIR_INDEX');
+  });
+
+  it('reports no reason at all when a genuine pair exists', () => {
+    expect(
+      missingPairReason({ before: [photo('MOVEIN', 0)], after: [photo('MOVEOUT', 0)] }),
+    ).toBeUndefined();
+  });
+
+  it('applies to rooms rebuilt from the aggregate too', () => {
+    const rooms = roomsFromAggregate(demoTenancy);
+    for (const room of rooms) {
+      for (const pair of matchedPairs(room.before, room.after)) {
+        expect(pair.before.pairIndex).toBe(pair.after.pairIndex);
+      }
+    }
   });
 });

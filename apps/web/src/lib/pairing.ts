@@ -43,6 +43,75 @@ export function pairsForRoom(
  * `NEEDS_REVIEW`, which would imply something ran and produced nothing, and it
  * is not `COMPLETE`.
  */
+/** A before and an after that genuinely describe the same spot. */
+export interface PhotoPair {
+  readonly pairIndex: number;
+  readonly before: PhotoRef;
+  readonly after: PhotoRef;
+}
+
+/**
+ * Joins the two sides on `pairIndex`, keeping only indexes present on both.
+ *
+ * `pairsForRoom` sorts each side independently, so `before[0]` and `after[0]`
+ * are only the same spot when both sides happen to be complete. If a move-in
+ * photo at `pairIndex` 0 was never taken, `after[0]` is `pairIndex` 1, and
+ * comparing them puts two different corners of the room side by side under a
+ * heading that claims they are the same one. In an evidence product that is
+ * not a cosmetic bug — it is a fabricated comparison.
+ *
+ * So the join is explicit, and an index without a counterpart is dropped here
+ * rather than silently paired with whatever sorted next to it.
+ */
+export function matchedPairs(
+  before: readonly PhotoRef[],
+  after: readonly PhotoRef[],
+): PhotoPair[] {
+  const afterByIndex = new Map(after.map((p) => [p.pairIndex, p]));
+  return [...before]
+    .sort((a, b) => a.pairIndex - b.pairIndex)
+    .flatMap((beforePhoto) => {
+      const afterPhoto = afterByIndex.get(beforePhoto.pairIndex);
+      return afterPhoto
+        ? [{ pairIndex: beforePhoto.pairIndex, before: beforePhoto, after: afterPhoto }]
+        : [];
+    });
+}
+
+/**
+ * The lowest `pairIndex` that exists on both sides, or `undefined` when there
+ * is no honest comparison to show. Callers render the missing-pair state on
+ * `undefined` — they must not fall back to `before[0]`/`after[0]`.
+ */
+export function firstMatchedPair(room: {
+  readonly before: readonly PhotoRef[];
+  readonly after: readonly PhotoRef[];
+}): PhotoPair | undefined {
+  return matchedPairs(room.before, room.after)[0];
+}
+
+/** Why a room has no comparison, so the UI can say which of these it is. */
+export type MissingPairReason =
+  /** Nothing captured for this room at all. */
+  | 'NO_PHOTOS'
+  /** Only move-in photographs exist. */
+  | 'NO_AFTER'
+  /** Only move-out photographs exist. */
+  | 'NO_BEFORE'
+  /** Both sides have photographs, but they share no `pairIndex`. */
+  | 'NO_SHARED_PAIR_INDEX';
+
+export function missingPairReason(room: {
+  readonly before: readonly PhotoRef[];
+  readonly after: readonly PhotoRef[];
+}): MissingPairReason | undefined {
+  if (firstMatchedPair(room)) return undefined;
+  if (room.before.length === 0 && room.after.length === 0) return 'NO_PHOTOS';
+  if (room.after.length === 0) return 'NO_AFTER';
+  if (room.before.length === 0) return 'NO_BEFORE';
+  return 'NO_SHARED_PAIR_INDEX';
+}
+
 export function roomsFromAggregate(tenancy: GetTenancyResponse): RoomDiffView[] {
   return [...tenancy.rooms]
     .sort((a, b) => a.orderIndex - b.orderIndex)

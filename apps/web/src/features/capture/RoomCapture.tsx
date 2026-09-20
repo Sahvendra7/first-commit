@@ -38,8 +38,16 @@ export interface RoomCaptureProps {
    * about what was actually stored; a client-side tally is not.
    */
   readonly serverPhotoCount?: number;
-  /** Called after a batch settles, so the caller can re-fetch the aggregate. */
-  readonly onUploaded?: (uploadedCount: number) => void;
+  /**
+   * Called after an operation settles, with **the number of photos that
+   * operation newly landed in S3** — not the running total for this room.
+   *
+   * The distinction is load-bearing. A caller reconciling against the server's
+   * room counter adds this to the count it read beforehand; handing it a
+   * cumulative total would re-count the first selection on the second, and
+   * invent an expected count the server can never reach.
+   */
+  readonly onUploaded?: (newlyUploadedCount: number) => void;
   readonly className?: string;
 }
 
@@ -96,17 +104,25 @@ export function RoomCapture({
 
   useEffect(() => () => queue.dispose(), [queue]);
 
+  /**
+   * Runs one queue operation and reports what *it* landed.
+   *
+   * `queue.uploadedCount` is deliberately not used here: it is cumulative for
+   * the life of the queue, and this callback means "new since the last time I
+   * told you".
+   */
   const runBatch = useCallback(
-    async (work: () => Promise<void>) => {
+    async (work: () => Promise<number>) => {
       setBusy(true);
+      let landed = 0;
       try {
-        await work();
+        landed = await work();
       } finally {
         setBusy(false);
-        onUploaded?.(queue.uploadedCount);
+        onUploaded?.(landed);
       }
     },
-    [onUploaded, queue],
+    [onUploaded],
   );
 
   const handleSelect = useCallback(

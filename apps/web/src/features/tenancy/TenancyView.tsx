@@ -8,7 +8,7 @@ import type {
 import type { HandoverApiClient } from '../../lib/api-client.js';
 import { isRouteNotDeployed, toUserFacingError, type UserFacingError } from '../../lib/errors.js';
 import { awaitIngest, countFor } from '../../lib/ingest.js';
-import { resolveRooms } from '../../lib/pairing.js';
+import { firstMatchedPair, missingPairReason, resolveRooms } from '../../lib/pairing.js';
 import { toDiffAdditions, type MarkedChange } from '../../lib/marked-change.js';
 import { CompareSlider } from '../compare/CompareSlider.js';
 import { ChangeMarker } from '../compare/ChangeMarker.js';
@@ -260,8 +260,15 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
   );
 
   if (room) {
-    const before = room.before[0];
-    const after = room.after[0];
+    // The comparison is only ever drawn from a pair that shares a `pairIndex`.
+    // `before[0]`/`after[0]` would happily put move-in corner A next to
+    // move-out corner B whenever one side is missing a shot.
+    const pair = firstMatchedPair(room);
+    const noPair = missingPairReason(room);
+    // Marking a change needs a move-out photograph, not a pair — annotating one
+    // photo asserts nothing about a second. Prefer the paired one when there is
+    // one, so the box lands on the image the slider just showed.
+    const annotationPhoto = pair?.after ?? room.after[0];
     return (
       <div className="space-y-4">
         <button
@@ -277,19 +284,19 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
         <h1 className="text-lg font-semibold text-slate-900">{room.roomLabel}</h1>
         {banners}
 
-        {before && after ? (
+        {pair ? (
           <CompareSlider
             before={{
-              url: before.url,
-              alt: `${room.roomLabel} at move-in`,
-              receivedAt: before.receivedAt,
-              sha256: before.sha256,
+              url: pair.before.url,
+              alt: `${room.roomLabel} at move-in, view ${pair.pairIndex + 1}`,
+              receivedAt: pair.before.receivedAt,
+              sha256: pair.before.sha256,
             }}
             after={{
-              url: after.url,
-              alt: `${room.roomLabel} at move-out`,
-              receivedAt: after.receivedAt,
-              sha256: after.sha256,
+              url: pair.after.url,
+              alt: `${room.roomLabel} at move-out, view ${pair.pairIndex + 1}`,
+              receivedAt: pair.after.receivedAt,
+              sha256: pair.after.sha256,
             }}
             overlays={marks
               .filter((m) => m.box)
@@ -299,10 +306,17 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
             onImageError={() => void load()}
           />
         ) : (
-          <p className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-600">
-            {before || after
-              ? 'Only one stage has photographs for this room, so there is nothing to compare yet.'
-              : 'No photographs recorded for this room yet.'}
+          <p
+            data-testid="missing-pair"
+            className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-600"
+          >
+            {noPair === 'NO_PHOTOS'
+              ? 'No photographs recorded for this room yet.'
+              : noPair === 'NO_AFTER'
+                ? 'This room has move-in photographs but no move-out photographs yet, so there is nothing to compare.'
+                : noPair === 'NO_BEFORE'
+                  ? 'This room has move-out photographs but no move-in photographs, so there is nothing to compare.'
+                  : 'The move-in and move-out photographs for this room do not line up as matching views yet, so there is no like-for-like comparison to show.'}
           </p>
         )}
 
@@ -318,9 +332,9 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
           }}
         />
 
-        {after ? (
+        {annotationPhoto ? (
           <ChangeMarker
-            imageUrl={after.url}
+            imageUrl={annotationPhoto.url}
             imageAlt={`${room.roomLabel} at move-out`}
             marks={marks}
             onMarksChange={setMarks}

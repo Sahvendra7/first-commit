@@ -110,7 +110,15 @@ export class UploadQueue {
     return this.#photos;
   }
 
-  /** Photos S3 has acknowledged. The client's count for `declaredPhotoCount`. */
+  /**
+   * Every photo S3 has acknowledged for the life of this queue — **cumulative**,
+   * across every selection and every retry.
+   *
+   * It is the right number for "n of m sent" in this component, and it is the
+   * wrong number for "how many landed just now". Anything reconciling against
+   * a server-side counter must use the per-operation totals returned by `add`,
+   * `retry` and `retryAll`, or it will double-count the second selection.
+   */
   get uploadedCount(): number {
     return this.#photos.filter((p) => p.status === 'UPLOADED').length;
   }
@@ -143,9 +151,14 @@ export class UploadQueue {
    * Resolves when nothing is left in flight; individual failures are reported
    * through `onChange`, not thrown, because one bad photo must not abandon the
    * other five.
+   *
+   * Returns **how many photos this call newly landed in S3** — not the queue
+   * total. A caller reconciling against the server's room counter adds this to
+   * the count it read before the call, so a second selection cannot re-count
+   * the first one.
    */
-  async add(files: readonly File[]): Promise<void> {
-    if (this.#disposed || files.length === 0) return;
+  async add(files: readonly File[]): Promise<number> {
+    if (this.#disposed || files.length === 0) return 0;
 
     const accepted: QueuedPhoto[] = files.map((file) => {
       this.#seq += 1;
@@ -169,29 +182,42 @@ export class UploadQueue {
 
     // Presign is capped at ten files per call, so the selection is chunked.
     // A batch of eleven is a wasted round trip and a 422 in front of the user.
+    let landed = 0;
     for (let i = 0; i < accepted.length; i += LIMITS.MAX_PRESIGN_BATCH) {
       const chunk = accepted.slice(i, i + LIMITS.MAX_PRESIGN_BATCH);
-      await this.#processChunk(chunk.map((p) => p.clientRef));
+      landed += await this.#processChunk(chunk.map((p) => p.clientRef));
     }
+    return landed;
   }
 
-  /** Retries one failed photo by hand, from wherever it got to. */
-  async retry(clientRef: string): Promise<void> {
+  /**
+   * Retries one failed photo by hand, from wherever it got to.
+   * Returns 1 if it landed this time, 0 otherwise — a retry that succeeds adds
+   * exactly one photo to the server's count, and a retry of something already
+   * uploaded adds none.
+   */
+  async retry(clientRef: string): Promise<number> {
     const photo = this.#photos.find((p) => p.clientRef === clientRef);
-    if (!photo || photo.status !== 'FAILED') return;
+    if (!photo || photo.status !== 'FAILED') return 0;
     this.#patch(clientRef, { status: 'QUEUED', attempts: 0, error: undefined });
-    await this.#processChunk([clientRef]);
+    return this.#processChunk([clientRef]);
   }
 
-  /** Retries every failed photo. The affordance after a tunnel or a lift. */
-  async retryAll(): Promise<void> {
+  /**
+   * Retries every failed photo. The affordance after a tunnel or a lift.
+   * Returns how many of them landed — never the queue total, which would
+   * re-count everything that succeeded before the failure.
+   */
+  async retryAll(): Promise<number> {
     const failed = this.#photos.filter((p) => p.status === 'FAILED').map((p) => p.clientRef);
     for (const clientRef of failed) {
       this.#patch(clientRef, { status: 'QUEUED', attempts: 0, error: undefined });
     }
+    let landed = 0;
     for (let i = 0; i < failed.length; i += LIMITS.MAX_PRESIGN_BATCH) {
-      await this.#processChunk(failed.slice(i, i + LIMITS.MAX_PRESIGN_BATCH));
+      landed += await this.#processChunk(failed.slice(i, i + LIMITS.MAX_PRESIGN_BATCH));
     }
+    return landed;
   }
 
   /** Releases thumbnail object URLs. Call from an effect cleanup. */
@@ -205,10 +231,11 @@ export class UploadQueue {
     this.#blobs.clear();
   }
 
-  async #processChunk(clientRefs: readonly string[]): Promise<void> {
+  /** Returns how many of `clientRefs` reached S3 on this pass. */
+  async #processChunk(clientRefs: readonly string[]): Promise<number> {
     const prepared = await this.#prepareAll(clientRefs);
-    if (prepared.length === 0) return;
-    await this.#uploadAll(prepared);
+    if (prepared.length === 0) return 0;
+    return this.#uploadAll(prepared);
   }
 
   /** Leg 0: downscale on device before anything touches the network. */
@@ -244,17 +271,20 @@ export class UploadQueue {
   /** Legs 1 and 2: presign the batch, then POST each file direct to S3. */
   async #uploadAll(
     prepared: readonly { clientRef: string; blob: Blob; contentType: PhotoContentType }[],
-  ): Promise<void> {
+  ): Promise<number> {
+    let landed = 0;
     for (const item of prepared) {
-      await this.#uploadOne(item);
+      if (await this.#uploadOne(item)) landed += 1;
     }
+    return landed;
   }
 
+  /** True when this photo reached S3 on this call. */
   async #uploadOne(item: {
     clientRef: string;
     blob: Blob;
     contentType: PhotoContentType;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const { api, tenancyId, phase, roomId, maxAttempts, sleep, now } = this.#options;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -289,15 +319,16 @@ export class UploadQueue {
           s3Key: upload.s3Key,
           error: undefined,
         });
-        return;
+        return true;
       } catch (error) {
         if (attempt >= maxAttempts) {
           this.#fail(item.clientRef, messageOf(error));
-          return;
+          return false;
         }
         await sleep(backoffMs(attempt));
       }
     }
+    return false;
   }
 
   #fail(clientRef: string, error: string): void {
