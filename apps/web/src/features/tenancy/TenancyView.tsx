@@ -287,18 +287,18 @@ export function TenancyView({
     }
   }, [api, load, marks, room, tenancyId]);
 
-  if (loading) return <p className="text-sm text-slate-600">Loading…</p>;
+  if (loading) return <p className="text-sm text-gray-500">Loading…</p>;
 
   if (error?.requiresSignIn) {
     return (
       <div className="space-y-3">
-        <p role="alert" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p role="alert" className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
           Your session has expired. Sign in again to continue.
         </p>
         <button
           type="button"
           onClick={onSignOut}
-          className="w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+          className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors min-h-11"
         >
           Sign in again
         </button>
@@ -309,14 +309,14 @@ export function TenancyView({
   if (!tenancy) {
     return (
       <div className="space-y-3">
-        <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">{error?.title ?? 'Could not load this tenancy'}</strong>
+        <p role="alert" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
+          <strong className="block font-semibold">{error?.title ?? 'Could not load this tenancy'}</strong>
           {error?.detail}
         </p>
         <button
           type="button"
           onClick={() => void load()}
-          className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800"
+          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors min-h-11"
         >
           Try again
         </button>
@@ -327,24 +327,24 @@ export function TenancyView({
   const banners = (
     <>
       {error && !error.requiresSignIn ? (
-        <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">{error.title}</strong>
+        <p role="alert" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
+          <strong className="block font-semibold">{error.title}</strong>
           {error.detail}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+        <p role="status" className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
           {notice}
         </p>
       ) : null}
       {capture.kind === 'INGESTING' ? (
-        <p role="status" data-testid="ingesting" className="rounded bg-sky-50 px-3 py-2 text-sm text-sky-900">
+        <p role="status" data-testid="ingesting" className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
           Recording photographs… {capture.ingested} of {capture.expected} hashed and
           timestamped.
         </p>
       ) : null}
       {capture.kind === 'INGEST_TIMEOUT' ? (
-        <p role="status" data-testid="ingest-timeout" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p role="status" data-testid="ingest-timeout" className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
           {capture.ingested} of {capture.expected} photographs are recorded so far. The rest
           may still be processing — nothing has been lost. Refresh in a moment.
         </p>
@@ -357,33 +357,33 @@ export function TenancyView({
         of this started.
       */}
       {reportJob.kind === 'FAILED' ? (
-        <div role="alert" data-testid="job-failed" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">The document could not be generated</strong>
+        <div role="alert" data-testid="job-failed" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
+          <strong className="block font-semibold">The document could not be generated</strong>
           Your photographs and their timestamps are unaffected. You can try again.
         </div>
       ) : null}
       {reportJob.kind === 'STALLED' ? (
-        <div role="status" data-testid="job-stalled" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <strong className="block">This is taking longer than usual</strong>
+        <div role="status" data-testid="job-stalled" className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+          <strong className="block font-semibold">This is taking longer than usual</strong>
           The document is still being prepared. Nothing has been lost.
           <button
             type="button"
             onClick={refreshReportJob}
-            className="mt-1 block min-h-11 font-semibold underline"
+            className="mt-2 block min-h-11 font-semibold text-amber-900 underline hover:text-amber-700 transition-colors"
           >
             Check again
           </button>
         </div>
       ) : null}
       {reportJob.kind === 'UNAVAILABLE' ? (
-        <p role="status" data-testid="job-unavailable" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+        <p role="status" data-testid="job-unavailable" className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
           Your photographs have been submitted. This deployment cannot report the
           document&rsquo;s progress, so refresh in a moment to see it.
         </p>
       ) : null}
       {reportJob.kind === 'ERROR' ? (
-        <p role="alert" data-testid="job-error" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">{reportJob.error.title}</strong>
+        <p role="alert" data-testid="job-error" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
+          <strong className="block font-semibold">{reportJob.error.title}</strong>
           {reportJob.error.detail}
         </p>
       ) : null}
@@ -401,18 +401,18 @@ export function TenancyView({
     // one, so the box lands on the image the slider just showed.
     const annotationPhoto = pair?.after ?? room.after[0];
     return (
-      <div className="space-y-4">
+      <div className="space-y-5">
         <button
           type="button"
           onClick={() => {
             setRoomId(undefined);
             setMarks([]);
           }}
-          className="text-sm font-medium text-sky-700 underline"
+          className="inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-[#1a1a1a] transition-colors"
         >
           ← All rooms
         </button>
-        <h1 className="text-lg font-semibold text-slate-900">{room.roomLabel}</h1>
+        <h1 className="text-xl font-bold text-[#1a1a1a]">{room.roomLabel}</h1>
         {banners}
 
         {pair ? (
@@ -439,7 +439,7 @@ export function TenancyView({
         ) : (
           <p
             data-testid="missing-pair"
-            className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-600"
+            className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600"
           >
             {noPair === 'NO_PHOTOS'
               ? 'No photographs recorded for this room yet.'
@@ -476,7 +476,7 @@ export function TenancyView({
           <button
             type="button"
             onClick={() => void saveMarks()}
-            className="w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
+            className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
           >
             Save {marks.length === 1 ? '1 change' : `${marks.length} changes`}
           </button>
@@ -487,7 +487,7 @@ export function TenancyView({
 
   if (recoveryOpen) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         {banners}
         <Recovery
           api={api}
@@ -500,11 +500,11 @@ export function TenancyView({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <JourneyStages status={tenancy.tenancy.status} />
       {banners}
       {roomsSource === 'aggregate' && diff ? (
-        <p className="rounded border border-slate-200 px-3 py-2 text-xs text-slate-600" data-testid="no-diff-note">
+        <p className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500" data-testid="no-diff-note">
           No room-by-room comparison has been computed for this tenancy. The photographs
           below are paired from the evidence record itself.
         </p>
@@ -543,7 +543,7 @@ export function TenancyView({
           type="button"
           onClick={() => setRecoveryOpen(true)}
           data-testid="open-recovery"
-          className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800"
+          className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 hover:shadow-sm transition-all"
         >
           Recover your deposit
         </button>

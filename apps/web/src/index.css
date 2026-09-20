@@ -1,3 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #fafafa;
+    color: #1a1a1a;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #ebebeb;
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #d4d4d4;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-2xl shadow-card border border-gray-100;
+  }
+  .card-hover {
+    @apply card transition-shadow duration-300 hover:shadow-card-hover;
+  }
+  .btn-primary {
+    @apply bg-[#1a1a1a] text-white rounded-xl font-semibold transition-colors hover:bg-gray-800 min-h-[44px] px-6 py-2 inline-flex items-center justify-center;
+  }
+  .btn-secondary {
+    @apply bg-white border border-gray-200 rounded-xl text-gray-800 transition-colors hover:bg-gray-50 min-h-[44px] px-6 py-2 inline-flex items-center justify-center;
+  }
+  .input-field {
+    @apply border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-gray-900 focus:border-transparent outline-none w-full bg-white;
+  }
+  .pill {
+    @apply inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700;
+  }
+  .pill-active {
+    @apply bg-gray-900 text-white;
+  }
+}

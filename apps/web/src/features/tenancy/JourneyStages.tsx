@@ -31,34 +31,56 @@ function stageFor(status: TenancyStatus): StageIndex {
   }
 }
 
+import { Fragment } from 'react';
+
 export function JourneyStages({ status }: { readonly status: TenancyStatus }) {
   const current = stageFor(status);
   return (
-    <nav aria-label="Progress" data-testid="journey-stages" className="mb-4">
-      <ol className="flex items-stretch gap-1">
+    <nav aria-label="Progress" data-testid="journey-stages" className="mb-6 rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
+      <div className="flex items-center justify-between">
         {STAGES.map((label, i) => {
           const done = i < current;
           const active = i === current;
+          const isLast = i === STAGES.length - 1;
           return (
-            <li key={label} className="min-w-0 flex-1">
+            <Fragment key={label}>
               <div
                 data-testid={`stage-${label.toLowerCase()}`}
                 aria-current={active ? 'step' : undefined}
-                className={[
-                  'rounded px-1 py-1.5 text-center text-xs font-medium',
-                  active
-                    ? 'bg-slate-900 text-white'
-                    : done
-                      ? 'bg-slate-200 text-slate-700'
-                      : 'bg-slate-100 text-slate-400',
-                ].join(' ')}
+                className="flex flex-col items-center min-h-11 justify-center"
               >
-                <span className="block truncate">{label}</span>
+                {done ? (
+                  <div className="w-6 h-6 rounded-full bg-[#1a1a1a] flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">✓</span>
+                  </div>
+                ) : active ? (
+                  <div className="w-6 h-6 rounded-full bg-[#1a1a1a] ring-4 ring-gray-200"></div>
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-gray-200"></div>
+                )}
+                <span
+                  className={
+                    active
+                      ? 'mt-2 text-xs font-semibold text-[#1a1a1a]'
+                      : done
+                        ? 'mt-2 text-xs font-medium text-gray-600'
+                        : 'mt-2 text-xs text-gray-400'
+                  }
+                >
+                  {label}
+                </span>
               </div>
-            </li>
+              {!isLast && (
+                <div
+                  className={`flex-1 h-0.5 mx-2 ${
+                    i < current ? 'bg-[#1a1a1a]' : 'bg-gray-200'
+                  }`}
+                />
+              )}
+            </Fragment>
           );
         })}
-      </ol>
+      </div>
     </nav>
   );
 }

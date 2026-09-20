@@ -144,39 +144,39 @@ export function ConditionSummary({
   const reportName = phase === 'MOVEIN' ? 'Condition Report' : 'Exit Report';
 
   return (
-    <section className={className} aria-labelledby="condition-summary-heading">
-      <header>
-        <h1 id="condition-summary-heading" className="text-lg font-semibold text-slate-900">
+    <section className={`space-y-5 ${className || ''}`.trim()} aria-labelledby="condition-summary-heading">
+      <header className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
+        <h1 id="condition-summary-heading" className="text-xl font-bold text-[#1a1a1a]">
           Condition summary
         </h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="mt-1.5 text-sm text-gray-500">
           {tenancy.addressLine}, {tenancy.city}
         </p>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="mt-1 text-sm text-gray-500">
           Deposit held: {formatRupees(tenancy.depositPaise)}
         </p>
-      </header>
 
-      <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-lg bg-slate-100 p-3">
-          <dt className="text-xs text-slate-600">Rooms</dt>
-          <dd className="text-xl font-semibold text-slate-900" data-testid="total-rooms">
-            {rooms.length}
-          </dd>
-        </div>
-        <div className="rounded-lg bg-slate-100 p-3">
-          <dt className="text-xs text-slate-600">Changes recorded</dt>
-          <dd className="text-xl font-semibold text-slate-900" data-testid="total-recorded">
-            {totalRecorded}
-          </dd>
-        </div>
-        <div className="rounded-lg bg-slate-100 p-3">
-          <dt className="text-xs text-slate-600">Photo pairs</dt>
-          <dd className="text-xl font-semibold text-slate-900" data-testid="total-pairs">
-            {tallies.reduce((sum, [, t]) => sum + t.pairCount, 0)}
-          </dd>
-        </div>
-      </dl>
+        <dl className="mt-0 grid grid-cols-3 gap-3 text-center">
+          <div className="rounded-xl bg-[#fafafa] p-4">
+            <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Rooms</dt>
+            <dd className="mt-1 text-2xl font-bold text-[#1a1a1a]" data-testid="total-rooms">
+              {rooms.length}
+            </dd>
+          </div>
+          <div className="rounded-xl bg-[#fafafa] p-4">
+            <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Changes recorded</dt>
+            <dd className="mt-1 text-2xl font-bold text-[#1a1a1a]" data-testid="total-recorded">
+              {totalRecorded}
+            </dd>
+          </div>
+          <div className="rounded-xl bg-[#fafafa] p-4">
+            <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Photo pairs</dt>
+            <dd className="mt-1 text-2xl font-bold text-[#1a1a1a]" data-testid="total-pairs">
+              {tallies.reduce((sum, [, t]) => sum + t.pairCount, 0)}
+            </dd>
+          </div>
+        </dl>
+      </header>
 
       {/*
         Only raised when a room was flagged for a reason other than the
@@ -186,7 +186,7 @@ export function ConditionSummary({
         <p
           role="status"
           data-testid="attention-banner"
-          className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
         >
           {needsAttention.length === 1
             ? '1 room needs a closer look.'
@@ -198,7 +198,7 @@ export function ConditionSummary({
         <p
           role="status"
           data-testid="missing-pairs-banner"
-          className="mt-3 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+          className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600"
         >
           {roomsWithoutPairs.length === 1
             ? '1 room has no before-and-after pair yet.'
@@ -209,7 +209,7 @@ export function ConditionSummary({
       {totalSuggestions > 0 ? (
         <p
           data-testid="suggestions-banner"
-          className="mt-3 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900"
+          className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800"
         >
           {totalSuggestions === 1
             ? '1 automatic suggestion is waiting for your decision.'
@@ -218,21 +218,21 @@ export function ConditionSummary({
         </p>
       ) : null}
 
-      <ul className="mt-4 space-y-3" data-testid="room-list">
+      <ul className="space-y-3" data-testid="room-list">
         {tallies.map(([room, t]) => (
           <li
             key={room.roomId}
             data-testid={`room-${room.roomId}`}
-            className="rounded-lg border border-slate-200 p-3"
+            className="rounded-2xl bg-white border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow duration-200"
           >
             <div className="flex items-baseline justify-between gap-2">
-              <h2 className="text-sm font-semibold text-slate-900">{room.roomLabel}</h2>
-              <span className="text-xs text-slate-500">
+              <h2 className="text-base font-semibold text-[#1a1a1a]">{room.roomLabel}</h2>
+              <span className="text-xs text-gray-400 font-medium">
                 {t.pairCount === 1 ? '1 pair' : `${t.pairCount} pairs`}
               </span>
             </div>
 
-            <p className="mt-1 text-sm text-slate-700" data-testid={`count-${room.roomId}`}>
+            <p className="mt-1.5 text-sm text-gray-600" data-testid={`count-${room.roomId}`}>
               {t.recorded === 0
                 ? 'No changes recorded'
                 : t.recorded === 1
@@ -248,7 +248,7 @@ export function ConditionSummary({
 
             {room.reviewReason ? (
               <p
-                className="mt-1 text-xs text-slate-600"
+                className="mt-1.5 text-xs text-gray-500 italic"
                 data-testid={`reason-${room.roomId}`}
               >
                 {REVIEW_REASON_COPY[room.reviewReason]}
@@ -263,37 +263,37 @@ export function ConditionSummary({
                     <li
                       key={change.id}
                       data-testid={`change-${change.id}`}
-                      className={`rounded border p-2 text-xs ${
+                      className={`rounded-xl border p-3 text-xs ${
                         isSuggestion
-                          ? 'border-dashed border-sky-300 bg-sky-50'
-                          : 'border-slate-200 bg-white'
+                          ? 'border-dashed border-blue-200 bg-blue-50/50'
+                          : 'border-gray-100 bg-white'
                       }`}
                     >
                       <p className="flex flex-wrap items-center gap-1">
                         {isSuggestion ? (
                           <span
                             data-testid={`suggestion-label-${change.id}`}
-                            className="rounded bg-sky-200 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-900"
+                            className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-700"
                           >
                             Suggestion
                           </span>
                         ) : (
-                          <span className="rounded bg-slate-200 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700">
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
                             You recorded
                           </span>
                         )}
                         {change.tenantAction ? (
                           <span
-                            className={`rounded px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
                               change.tenantAction === 'ACCEPT'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-slate-200 text-slate-600'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-gray-100 text-gray-500'
                             }`}
                           >
                             {change.tenantAction === 'ACCEPT' ? 'Included' : 'Dismissed'}
                           </span>
                         ) : (
-                          <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
                             Not yet decided
                           </span>
                         )}
@@ -304,7 +304,7 @@ export function ConditionSummary({
                         */}
                         {isSuggestion ? (
                           <span
-                            className="text-[10px] text-sky-800"
+                            className="text-[10px] text-blue-600"
                             data-testid={`confidence-${change.id}`}
                           >
                             model confidence {change.confidence.toFixed(2)}
@@ -321,7 +321,7 @@ export function ConditionSummary({
                       {change.wearAndTear ? (
                         <dl
                           data-testid={`wear-${change.id}`}
-                          className="mt-1 space-y-0.5 border-l-2 border-slate-200 pl-2 text-[11px] text-slate-600"
+                          className="mt-2 space-y-1 border-l-2 border-gray-200 pl-3 text-[11px] text-gray-500"
                         >
                           <div>
                             <dt className="inline font-medium">A landlord may argue: </dt>
@@ -355,10 +355,10 @@ export function ConditionSummary({
                             aria-pressed={change.tenantAction === 'ACCEPT'}
                             disabled={deciding}
                             onClick={() => onDecideChange(room.roomId, change.id, 'ACCEPT')}
-                            className={`min-h-11 flex-1 rounded border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                            className={`min-h-11 flex-1 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 transition-colors ${
                               change.tenantAction === 'ACCEPT'
                                 ? 'border-emerald-600 bg-emerald-600 text-white'
-                                : 'border-slate-300 bg-white text-slate-800'
+                                : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
                             }`}
                           >
                             {change.tenantAction === 'ACCEPT'
@@ -371,10 +371,10 @@ export function ConditionSummary({
                             aria-pressed={change.tenantAction === 'REJECT'}
                             disabled={deciding}
                             onClick={() => onDecideChange(room.roomId, change.id, 'REJECT')}
-                            className={`min-h-11 flex-1 rounded border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                            className={`min-h-11 flex-1 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 transition-colors ${
                               change.tenantAction === 'REJECT'
-                                ? 'border-slate-700 bg-slate-700 text-white'
-                                : 'border-slate-300 bg-white text-slate-800'
+                                ? 'border-gray-700 bg-gray-700 text-white'
+                                : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
                             }`}
                           >
                             {change.tenantAction === 'REJECT' ? 'Left out' : 'Leave this out'}
@@ -391,7 +391,7 @@ export function ConditionSummary({
               <button
                 type="button"
                 onClick={() => onSelectRoom(room.roomId)}
-                className="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800"
+                className="mt-3 w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:shadow-sm transition-all"
               >
                 {t.recorded === 0 && t.suggestions === 0
                   ? `Add a change in ${room.roomLabel}`
@@ -402,13 +402,13 @@ export function ConditionSummary({
         ))}
       </ul>
 
-      <div className="mt-5 border-t border-slate-200 pt-4">
+      <div className="mt-6 border-t border-gray-100 pt-5">
         <button
           type="button"
           onClick={onGenerateReport}
           disabled={generating || !onGenerateReport || rooms.length === 0}
           data-testid="generate-report"
-          className="w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors disabled:opacity-50"
         >
           {generating ? `Generating ${reportName}…` : `Generate ${reportName}`}
         </button>
@@ -418,9 +418,9 @@ export function ConditionSummary({
             <progress
               value={job.progressDone}
               max={Math.max(1, job.progressTotal)}
-              className="h-2 w-full"
+              className="h-2 w-full rounded-full appearance-none"
             />
-            <p className="mt-1 text-xs text-slate-600">
+            <p className="mt-2 text-xs text-gray-400">
               {job.status === 'FAILED'
                 ? 'The report could not be generated. Your photographs and their timestamps are unaffected — you can try again.'
                 : `${job.progressDone} of ${job.progressTotal} complete`}
@@ -428,7 +428,7 @@ export function ConditionSummary({
           </div>
         ) : null}
 
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-gray-400">
           The report lists every photograph with the time it was received and its digest, so
           any later alteration is detectable.
         </p>
@@ -436,22 +436,22 @@ export function ConditionSummary({
 
       {documents && documents.length > 0 ? (
         <div className="mt-4" data-testid="documents">
-          <h2 className="text-sm font-semibold text-slate-900">Documents</h2>
+          <h2 className="text-base font-semibold text-[#1a1a1a]">Documents</h2>
           <ul className="mt-2 space-y-2">
             {documents.map((doc) => (
               <li
                 key={doc.documentId}
                 data-testid={`document-${doc.documentId}`}
-                className="rounded-lg border border-slate-200 p-3 text-sm"
+                className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm text-sm"
               >
-                <p className="font-medium text-slate-900">
+                <p className="font-semibold text-[#1a1a1a]">
                   {doc.docType === 'CONDITION_REPORT'
                     ? 'Condition Report'
                     : doc.docType === 'EXIT_REPORT'
                       ? 'Exit Report'
                       : 'Demand Letter'}
                 </p>
-                <p className="text-xs text-slate-500">Record {doc.recordRef}</p>
+                <p className="text-xs text-gray-400">Record {doc.recordRef}</p>
                 {doc.url ? (
                   <>
                     {/*
@@ -463,7 +463,7 @@ export function ConditionSummary({
                       href={doc.url}
                       download
                       data-testid={`download-${doc.documentId}`}
-                      className="mt-1 inline-flex min-h-11 items-center text-sm font-medium text-sky-700 underline"
+                      className="mt-2 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-[#1a1a1a] hover:text-gray-600 transition-colors underline"
                     >
                       Download PDF
                     </a>
@@ -472,12 +472,12 @@ export function ConditionSummary({
                       rendered straight from the aggregate and never stored;
                       reloading is what gets a fresh one.
                     */}
-                    <span className="block text-xs text-slate-500">
+                    <span className="block text-xs text-gray-400 mt-1">
                       This link is temporary — reopen this page to get a fresh one.
                     </span>
                   </>
                 ) : (
-                  <p className="mt-1 text-xs text-slate-500">Preparing…</p>
+                  <p className="mt-1 text-xs text-gray-400">Preparing…</p>
                 )}
               </li>
             ))}

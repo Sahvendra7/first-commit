@@ -141,33 +141,37 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
           : 'Sign in';
 
   return (
-    <form onSubmit={submit} className="space-y-3" data-testid="sign-in">
-      <h1 className="text-lg font-semibold text-slate-900">{heading}</h1>
-      <p className="text-sm text-slate-600">
-        {mode === 'CONFIRM'
-          ? 'Enter the six-digit code we emailed you.'
-          : 'Your photographs are private to your account. Signing in is what ties the record to you.'}
-      </p>
+    <form onSubmit={submit} className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 space-y-4" data-testid="sign-in">
+      <div>
+        <h1 className="text-xl font-bold text-[#1a1a1a]">{heading}</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {mode === 'CONFIRM'
+            ? 'Enter the six-digit code we emailed you.'
+            : 'Your photographs are private to your account. Signing in is what ties the record to you.'}
+        </p>
+      </div>
 
-      <label className="block text-xs font-medium text-slate-700" htmlFor="auth-email">
-        Email
-      </label>
-      <input
-        id="auth-email"
-        type="email"
-        autoComplete="username"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        // The address is fixed once a challenge is in progress: changing it
-        // mid-flow would answer one account's challenge with another's code.
-        disabled={mode === 'NEW_PASSWORD' || mode === 'CONFIRM'}
-        className="mt-1 min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base disabled:bg-slate-100"
-      />
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="auth-email">
+          Email
+        </label>
+        <input
+          id="auth-email"
+          type="email"
+          autoComplete="username"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          // The address is fixed once a challenge is in progress: changing it
+          // mid-flow would answer one account's challenge with another's code.
+          disabled={mode === 'NEW_PASSWORD' || mode === 'CONFIRM'}
+          className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all disabled:opacity-50 disabled:bg-gray-50"
+        />
+      </div>
 
       {mode === 'NEW_PASSWORD' ? (
-        <>
-          <label className="block text-xs font-medium text-slate-700" htmlFor="auth-new-password">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="auth-new-password">
             Choose a new password
           </label>
           <input
@@ -179,15 +183,15 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             aria-describedby="auth-password-hint"
-            className="mt-1 min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base"
+            className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all"
           />
-          <p id="auth-password-hint" className="text-xs text-slate-500">
+          <p id="auth-password-hint" className="text-xs text-gray-500 mt-1.5">
             {PASSWORD_HINT}
           </p>
-        </>
+        </div>
       ) : mode === 'CONFIRM' ? (
-        <>
-          <label className="block text-xs font-medium text-slate-700" htmlFor="auth-code">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="auth-code">
             Verification code
           </label>
           <input
@@ -198,12 +202,12 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
             required
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base tracking-widest"
+            className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all tracking-widest"
           />
-        </>
+        </div>
       ) : (
-        <>
-          <label className="block text-xs font-medium text-slate-700" htmlFor="auth-password">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5" htmlFor="auth-password">
             Password
           </label>
           <input
@@ -215,23 +219,23 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             {...(mode === 'SIGN_UP' ? { 'aria-describedby': 'auth-password-hint' } : {})}
-            className="mt-1 min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base"
+            className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all"
           />
           {mode === 'SIGN_UP' ? (
-            <p id="auth-password-hint" className="text-xs text-slate-500">
+            <p id="auth-password-hint" className="text-xs text-gray-500 mt-1.5">
               {PASSWORD_HINT}
             </p>
           ) : null}
-        </>
+        </div>
       )}
 
       {error ? (
-        <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
+        <p role="alert" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+        <p role="status" className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
           {notice}
         </p>
       ) : null}
@@ -240,19 +244,19 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
         type="submit"
         disabled={busy}
         data-testid="auth-submit"
-        className="min-h-11 w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+        className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors disabled:opacity-50 min-h-11 mt-2"
       >
         {submitLabel}
       </button>
 
       {mode === 'SIGN_IN' ? (
-        <p className="text-center text-sm text-slate-600">
+        <p className="text-center text-sm text-gray-500 pt-2">
           No account yet?{' '}
           <button
             type="button"
             onClick={() => switchTo('SIGN_UP')}
             data-testid="to-sign-up"
-            className="min-h-11 font-semibold text-sky-700 underline"
+            className="min-h-11 text-sm text-gray-500 hover:text-[#1a1a1a] transition-colors underline cursor-pointer"
           >
             Create one
           </button>
@@ -260,13 +264,13 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
       ) : null}
 
       {mode === 'SIGN_UP' ? (
-        <p className="text-center text-sm text-slate-600">
+        <p className="text-center text-sm text-gray-500 pt-2">
           Already have an account?{' '}
           <button
             type="button"
             onClick={() => switchTo('SIGN_IN')}
             data-testid="to-sign-in"
-            className="min-h-11 font-semibold text-sky-700 underline"
+            className="min-h-11 text-sm text-gray-500 hover:text-[#1a1a1a] transition-colors underline cursor-pointer"
           >
             Sign in
           </button>
@@ -274,14 +278,14 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
       ) : null}
 
       {mode === 'CONFIRM' ? (
-        <p className="text-center text-sm text-slate-600">
+        <p className="text-center text-sm text-gray-500 pt-2">
           Didn&rsquo;t get it?{' '}
           <button
             type="button"
             onClick={() => void resend()}
             disabled={busy}
             data-testid="resend-code"
-            className="min-h-11 font-semibold text-sky-700 underline disabled:opacity-50"
+            className="min-h-11 text-sm text-gray-500 hover:text-[#1a1a1a] transition-colors underline cursor-pointer disabled:opacity-50 disabled:hover:text-gray-500"
           >
             Send a new code
           </button>

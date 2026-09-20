@@ -90,78 +90,80 @@ export function App() {
   }, []);
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-screen-sm px-4 py-6">
+    <main className="mx-auto min-h-screen w-full max-w-screen-md bg-[#fafafa]">
       {/* The product header. It names the app and says in one line what the app
           is for, so the first screen is never an unlabelled table of rooms. */}
-      <header className="mb-4 border-b border-slate-200 pb-3">
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-4">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl font-bold tracking-tight text-slate-900">Handover</h1>
+          <h1 className="text-xl font-bold tracking-tight text-[#1a1a1a]">Handover</h1>
           {demo ? (
             <span
               data-testid="demo-badge"
-              className="shrink-0 rounded bg-fuchsia-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-fuchsia-900"
+              className="shrink-0 rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-violet-700"
             >
               Demo
             </span>
           ) : null}
         </div>
-        <p className="mt-1 text-sm text-slate-600">
+        <p className="mt-0.5 text-sm text-gray-500">
           Rental evidence, organized from move-in to deposit recovery.
         </p>
         {demo ? (
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-gray-400">
             Seeded walkthrough — not a real tenancy. Nothing here is sent anywhere.
           </p>
         ) : null}
       </header>
 
-      {/* Configuration is checked before anything else: without it there is no
-          backend to talk to, and a blank screen with a console error is the
-          worst possible way to say so. */}
-      {!demo && !configResult.ok ? (
-        <div className="space-y-2" data-testid="not-configured">
-          <h1 className="text-lg font-semibold text-slate-900">Not configured</h1>
-          <p className="text-sm text-slate-600">
-            This build has no backend configured, so it cannot sign you in or load a
-            tenancy. Copy <code>.env.example</code> to <code>.env.local</code> and set:
-          </p>
-          <ul className="list-inside list-disc text-sm text-slate-700">
-            {configResult.error.missing.map((key) => (
-              <li key={key}>
-                <code>{key}</code>
-              </li>
-            ))}
-          </ul>
-          <p className="text-sm text-slate-600">
-            Or append <code>?demo=1</code> to see the seeded offline walkthrough.
-          </p>
-        </div>
-      ) : !demo && !user ? (
-        auth ? <SignIn auth={auth} onSignedIn={setUser} /> : null
-      ) : !api ? (
-        <p className="text-sm text-slate-600">Connecting…</p>
-      ) : !tenancyId ? (
-        <CreateTenancy api={api} onCreated={(created) => selectTenancy(created.tenancyId)} />
-      ) : (
-        <>
-          {!demo && user ? (
-            <div className="mb-3 flex items-baseline justify-between gap-2 text-xs text-slate-500">
-              <span className="truncate" data-testid="signed-in-as">
-                {user.email}
-              </span>
-              <button type="button" onClick={signOut} className="underline">
-                Sign out
-              </button>
-            </div>
-          ) : null}
-          <TenancyView
-            api={api}
-            tenancyId={tenancyId}
-            {...(phaseOverride ? { phaseOverride } : {})}
-            onSignOut={signOut}
-          />
-        </>
-      )}
+      <div className="px-6 py-6">
+        {/* Configuration is checked before anything else: without it there is no
+            backend to talk to, and a blank screen with a console error is the
+            worst possible way to say so. */}
+        {!demo && !configResult.ok ? (
+          <div className="space-y-2 rounded-2xl bg-white p-6 shadow-sm border border-gray-100" data-testid="not-configured">
+            <h1 className="text-lg font-semibold text-[#1a1a1a]">Not configured</h1>
+            <p className="text-sm text-gray-600">
+              This build has no backend configured, so it cannot sign you in or load a
+              tenancy. Copy <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">.env.example</code> to <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">.env.local</code> and set:
+            </p>
+            <ul className="list-inside list-disc text-sm text-gray-600">
+              {configResult.error.missing.map((key) => (
+                <li key={key}>
+                  <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">{key}</code>
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-gray-600">
+              Or append <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">?demo=1</code> to see the seeded offline walkthrough.
+            </p>
+          </div>
+        ) : !demo && !user ? (
+          auth ? <SignIn auth={auth} onSignedIn={setUser} /> : null
+        ) : !api ? (
+          <p className="text-sm text-gray-500">Connecting…</p>
+        ) : !tenancyId ? (
+          <CreateTenancy api={api} onCreated={(created) => selectTenancy(created.tenancyId)} />
+        ) : (
+          <>
+            {!demo && user ? (
+              <div className="mb-3 rounded-xl bg-white px-4 py-2.5 border border-gray-100 flex items-baseline justify-between gap-2 text-xs text-gray-500">
+                <span className="truncate" data-testid="signed-in-as">
+                  {user.email}
+                </span>
+                <button type="button" onClick={signOut} className="text-gray-500 hover:text-[#1a1a1a] transition-colors underline">
+                  Sign out
+                </button>
+              </div>
+            ) : null}
+            <TenancyView
+              api={api}
+              tenancyId={tenancyId}
+              {...(phaseOverride ? { phaseOverride } : {})}
+              onSignOut={signOut}
+            />
+          </>
+        )}
+      </div>
     </main>
   );
 }

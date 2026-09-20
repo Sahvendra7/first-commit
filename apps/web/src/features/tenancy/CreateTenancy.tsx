@@ -63,16 +63,16 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
     }
   }
 
-  const field = 'mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm';
+  const field = 'w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all';
 
   return (
-    <form onSubmit={submit} className="space-y-3" data-testid="create-tenancy">
-      <h1 className="text-lg font-semibold text-slate-900">Start a tenancy record</h1>
-      <p className="text-sm text-slate-600">
+    <form onSubmit={submit} className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 space-y-4" data-testid="create-tenancy">
+      <h1 className="text-xl font-bold text-[#1a1a1a]">Start a tenancy record</h1>
+      <p className="text-sm text-gray-500">
         This creates the record your photographs attach to. Karnataka only in this build.
       </p>
 
-      <label className="block text-xs font-medium text-slate-700">
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">
         Address
         <input
           required
@@ -83,7 +83,7 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
         />
       </label>
 
-      <label className="block text-xs font-medium text-slate-700">
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">
         City
         <input
           required
@@ -95,7 +95,7 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
       </label>
 
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-xs font-medium text-slate-700">
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
           Monthly rent (₹)
           <input
             required
@@ -106,7 +106,7 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
             className={field}
           />
         </label>
-        <label className="block text-xs font-medium text-slate-700">
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
           Deposit (₹)
           <input
             required
@@ -119,7 +119,7 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
         </label>
       </div>
 
-      <label className="block text-xs font-medium text-slate-700">
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">
         Move-in date
         <input
           required
@@ -130,7 +130,7 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
         />
       </label>
 
-      <label className="block text-xs font-medium text-slate-700">
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">
         Landlord email
         <input
           required
@@ -142,13 +142,21 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
         />
       </label>
 
-      <p className="text-xs text-slate-500">
-        {DEFAULT_ROOM_PRESETS.length} rooms will be created:{' '}
-        {DEFAULT_ROOM_PRESETS.map((r) => r.label).join(', ')}.
-      </p>
+      <div>
+        <p className="text-sm text-gray-500 mb-2">
+          {DEFAULT_ROOM_PRESETS.length} rooms will be created:
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {DEFAULT_ROOM_PRESETS.map((r) => (
+            <span key={r.label} className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700">
+              {r.label}
+            </span>
+          ))}
+        </div>
+      </div>
 
       {error ? (
-        <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
+        <p role="alert" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
           {error}
         </p>
       ) : null}
@@ -156,7 +164,7 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
       <button
         type="submit"
         disabled={busy}
-        className="w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+        className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors disabled:opacity-50 min-h-11"
       >
         {busy ? 'Creating…' : 'Create tenancy record'}
       </button>

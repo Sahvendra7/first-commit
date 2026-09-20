@@ -234,51 +234,51 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
   const progress = jobForProgress(letterJob);
 
   return (
-    <section className={className} aria-labelledby="recovery-heading">
+    <section className={`rounded-2xl bg-white p-6 shadow-sm border border-gray-100 ${className || ''}`} aria-labelledby="recovery-heading">
       {onBack ? (
         <button
           type="button"
           onClick={onBack}
-          className="min-h-11 text-sm font-medium text-sky-700 underline"
+          className="min-h-11 inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-[#1a1a1a] transition-colors mb-4"
         >
           ← Back to the record
         </button>
       ) : null}
 
-      <h1 id="recovery-heading" className="mt-2 text-lg font-semibold text-slate-900">
+      <h1 id="recovery-heading" className="text-xl font-bold text-[#1a1a1a]">
         Recover your deposit
       </h1>
-      <p className="mt-1 text-sm text-slate-600">
+      <p className="mt-1 text-sm text-gray-600">
         {summary.addressLine}, {summary.city}
       </p>
 
       {/* ── Facts from the record, not from this screen ─────────────────── */}
-      <dl className="mt-4 space-y-2 rounded-lg border border-slate-200 p-3 text-sm">
+      <dl className="mt-6 space-y-3 rounded-2xl border border-gray-100 bg-[#f6f6f6]/50 p-4 text-sm">
         <div className="flex justify-between gap-3">
-          <dt className="text-slate-600">Deposit held</dt>
-          <dd className="font-semibold text-slate-900" data-testid="deposit-held">
+          <dt className="text-gray-600">Deposit held</dt>
+          <dd className="text-sm font-medium text-[#1a1a1a]" data-testid="deposit-held">
             {formatRupees(summary.depositPaise)}
           </dd>
         </div>
         {summary.handoverDate ? (
           <div className="flex justify-between gap-3">
-            <dt className="text-slate-600">Handover</dt>
-            <dd className="font-medium text-slate-900" data-testid="handover-date">
+            <dt className="text-gray-600">Handover</dt>
+            <dd className="text-sm font-medium text-[#1a1a1a]" data-testid="handover-date">
               {summary.handoverDate}
             </dd>
           </div>
         ) : null}
         {summary.refundDueDate ? (
           <div className="flex justify-between gap-3">
-            <dt className="text-slate-600">Refund due by</dt>
-            <dd className="font-medium text-slate-900" data-testid="refund-due">
+            <dt className="text-gray-600">Refund due by</dt>
+            <dd className="text-sm font-medium text-[#1a1a1a]" data-testid="refund-due">
               {summary.refundDueDate}
             </dd>
           </div>
         ) : null}
         <div className="flex justify-between gap-3">
-          <dt className="text-slate-600">Evidence on file</dt>
-          <dd className="font-medium text-slate-900" data-testid="evidence-count">
+          <dt className="text-gray-600">Evidence on file</dt>
+          <dd className="text-sm font-medium text-[#1a1a1a]" data-testid="evidence-count">
             {tenancy.photos.length === 1
               ? '1 photograph'
               : `${tenancy.photos.length} photographs`}{' '}
@@ -292,7 +292,7 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
         <p
           role="status"
           data-testid="claim-blocked"
-          className="mt-4 rounded border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+          className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800"
         >
           {blocker.kind === 'NO_HANDOVER'
             ? 'A letter needs a handover date on the record. Close the move-out stage first.'
@@ -303,7 +303,7 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
       ) : null}
 
       {error ? (
-        <p role="alert" className="mt-4 rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
+        <p role="alert" className="mt-4 rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
           <strong className="block">{error.title}</strong>
           {error.detail}
         </p>
@@ -320,10 +320,10 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
           noValidate
         >
           <div>
-            <label htmlFor="claim-deductions" className="block text-sm font-medium text-slate-800">
+            <label htmlFor="claim-deductions" className="block text-sm font-medium text-gray-700 mb-1.5">
               What did the landlord deduct?
             </label>
-            <p id="claim-deductions-help" className="text-xs text-slate-500">
+            <p id="claim-deductions-help" className="text-xs text-gray-500 mb-2">
               In rupees. Enter 0 if nothing was deducted.
             </p>
             <input
@@ -338,7 +338,7 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
               {...(touched && errors.deductions
                 ? { 'aria-errormessage': 'claim-deductions-error' }
                 : {})}
-              className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+              className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all"
             />
             {touched && errors.deductions ? (
               <p id="claim-deductions-error" role="alert" className="mt-1 text-xs text-rose-700">
@@ -348,10 +348,10 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
           </div>
 
           <div>
-            <label htmlFor="claim-reason" className="block text-sm font-medium text-slate-800">
+            <label htmlFor="claim-reason" className="block text-sm font-medium text-gray-700 mb-1.5">
               Reasons the landlord gave
             </label>
-            <p id="claim-reason-help" className="text-xs text-slate-500">
+            <p id="claim-reason-help" className="text-xs text-gray-500 mb-2">
               Optional. Add each reason as they stated it.
             </p>
             <div className="mt-1 flex gap-2">
@@ -368,14 +368,14 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
                     addReason();
                   }
                 }}
-                className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+                className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all"
               />
               <button
                 type="button"
                 onClick={addReason}
                 disabled={reasonDraft.trim() === '' || reasons.length >= 20}
                 data-testid="add-reason"
-                className="min-h-11 shrink-0 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-800 disabled:opacity-50"
+                className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition-colors min-h-11 shrink-0 disabled:opacity-50"
               >
                 Add
               </button>
@@ -385,14 +385,14 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
                 {reasons.map((reason, index) => (
                   <li
                     key={`${index}-${reason}`}
-                    className="flex items-start justify-between gap-2 rounded border border-slate-200 px-2 py-1.5 text-sm"
+                    className="flex items-start justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm"
                   >
-                    <span className="text-slate-800">{reason}</span>
+                    <span className="text-[#1a1a1a]">{reason}</span>
                     <button
                       type="button"
                       onClick={() => setReasons((c) => c.filter((_, i) => i !== index))}
                       aria-label={`Remove reason: ${reason}`}
-                      className="min-h-11 shrink-0 px-1 text-xs font-semibold text-slate-500 underline"
+                      className="min-h-11 shrink-0 px-1 text-xs font-semibold text-gray-500 hover:text-[#1a1a1a] underline transition-colors"
                     >
                       Remove
                     </button>
@@ -403,10 +403,10 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
           </div>
 
           <div>
-            <label htmlFor="claim-received" className="block text-sm font-medium text-slate-800">
+            <label htmlFor="claim-received" className="block text-sm font-medium text-gray-700 mb-1.5">
               How much of the deposit have you received back?
             </label>
-            <p id="claim-received-help" className="text-xs text-slate-500">
+            <p id="claim-received-help" className="text-xs text-gray-500 mb-2">
               In rupees. Enter 0 if none of it has been returned.
             </p>
             <input
@@ -421,7 +421,7 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
               {...(touched && errors.received
                 ? { 'aria-errormessage': 'claim-received-error' }
                 : {})}
-              className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+              className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all"
             />
             {touched && errors.received ? (
               <p id="claim-received-error" role="alert" className="mt-1 text-xs text-rose-700">
@@ -431,10 +431,10 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
           </div>
 
           <div>
-            <label htmlFor="claim-refund-date" className="block text-sm font-medium text-slate-800">
+            <label htmlFor="claim-refund-date" className="block text-sm font-medium text-gray-700 mb-1.5">
               When did that arrive?
             </label>
-            <p id="claim-refund-date-help" className="text-xs text-slate-500">
+            <p id="claim-refund-date-help" className="text-xs text-gray-500 mb-2">
               Optional. Leave blank if nothing has been returned.
             </p>
             <input
@@ -449,7 +449,7 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
               {...(touched && errors.refundDate
                 ? { 'aria-errormessage': 'claim-refund-date-error' }
                 : {})}
-              className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-base"
+              className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all"
             />
             {touched && errors.refundDate ? (
               <p id="claim-refund-date-error" role="alert" className="mt-1 text-xs text-rose-700">
@@ -468,12 +468,12 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
             type="submit"
             disabled={submitting}
             data-testid="submit-claim"
-            className="min-h-11 w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+            className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors disabled:opacity-50 min-h-11"
           >
             {submitting ? 'Preparing…' : 'Prepare my demand letter'}
           </button>
 
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-gray-500">
             The letter is generated from your recorded evidence. The amounts in it are
             worked out from the figures above and from the deposit on your tenancy record.
           </p>
@@ -483,37 +483,37 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
       {/* ── What was submitted, and the letter that follows ─────────────── */}
       {submitted ? (
         <div className="mt-4 space-y-4" data-testid="claim-result">
-          <div className="rounded-lg border border-slate-200 p-3">
-            <h2 className="text-sm font-semibold text-slate-900">Your claim</h2>
-            <dl className="mt-2 space-y-2 text-sm">
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+            <h2 className="text-sm font-semibold text-[#1a1a1a]">Your claim</h2>
+            <dl className="mt-4 space-y-3 text-sm">
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Deposit held</dt>
-                <dd className="font-medium text-slate-900">
+                <dt className="text-gray-600">Deposit held</dt>
+                <dd className="font-medium text-[#1a1a1a]">
                   {formatRupees(summary.depositPaise)}
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Deducted by the landlord</dt>
-                <dd className="font-medium text-slate-900" data-testid="result-deductions">
+                <dt className="text-gray-600">Deducted by the landlord</dt>
+                <dd className="font-medium text-[#1a1a1a]" data-testid="result-deductions">
                   {formatRupees(submitted.deductionsPaise)}
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-600">Returned to you</dt>
-                <dd className="font-medium text-slate-900" data-testid="result-received">
+                <dt className="text-gray-600">Returned to you</dt>
+                <dd className="font-medium text-[#1a1a1a]" data-testid="result-received">
                   {formatRupees(submitted.receivedPaise)}
                 </dd>
               </div>
             </dl>
 
             {submitted.reasons.length > 0 ? (
-              <div className="mt-3">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <div className="mt-6">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
                   Reasons given
                 </h3>
-                <ul className="mt-1 list-inside list-disc text-sm text-slate-700">
+                <ul className="mt-1 space-y-1 text-sm text-gray-700">
                   {submitted.reasons.map((reason, index) => (
-                    <li key={`${index}-${reason}`}>{reason}</li>
+                    <li key={`${index}-${reason}`} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm">{reason}</li>
                   ))}
                 </ul>
               </div>
@@ -524,7 +524,7 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
               letter is the artifact that asserts an amount, and two places
               asserting it is two places that can disagree.
             */}
-            <p className="mt-3 rounded bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+            <p className="mt-6 rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
               The amount still owed, and any statutory interest on it, are worked out
               when the letter is prepared and are stated in the letter itself.
             </p>
@@ -532,8 +532,8 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
 
           {/* Job lifecycle: queued → running → completed → failed. */}
           {letterJob.kind === 'POLLING' ? (
-            <div data-testid="letter-progress" className="rounded-lg border border-slate-200 p-3">
-              <p role="status" className="text-sm text-slate-700">
+            <div data-testid="letter-progress" className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <p role="status" className="text-sm text-gray-700">
                 Preparing your demand letter…
               </p>
               {progress ? (
@@ -541,9 +541,9 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
                   <progress
                     value={progress.progressDone}
                     max={Math.max(1, progress.progressTotal)}
-                    className="mt-2 h-2 w-full"
+                    className="mt-4 h-2 w-full rounded-full overflow-hidden [&::-webkit-progress-bar]:bg-gray-100 [&::-webkit-progress-value]:bg-[#1a1a1a]"
                   />
-                  <p className="mt-1 text-xs text-slate-600">
+                  <p className="mt-2 text-xs text-gray-500">
                     {progress.progressDone} of {progress.progressTotal} complete
                   </p>
                 </>
@@ -552,19 +552,19 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
           ) : null}
 
           {letterJob.kind === 'FAILED' ? (
-            <p role="alert" data-testid="letter-failed" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              <strong className="block">The letter could not be prepared</strong>
+            <p role="alert" data-testid="letter-failed" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
+              <strong className="block mb-1">The letter could not be prepared</strong>
               Your evidence and your recorded changes are unaffected. You can try again.
             </p>
           ) : null}
 
           {letterJob.kind === 'STALLED' ? (
-            <div role="status" data-testid="letter-stalled" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <div role="status" data-testid="letter-stalled" className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
               This is taking longer than usual. Nothing has been lost.
               <button
                 type="button"
                 onClick={refreshLetterJob}
-                className="mt-1 block min-h-11 font-semibold underline"
+                className="mt-2 block min-h-11 font-semibold underline text-amber-900"
               >
                 Check again
               </button>
@@ -572,7 +572,7 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
           ) : null}
 
           {letterJob.kind === 'UNAVAILABLE' ? (
-            <p role="status" data-testid="letter-unavailable" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+            <p role="status" data-testid="letter-unavailable" className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
               Your claim was submitted. This deployment cannot report the letter&rsquo;s
               progress, so refresh in a moment to find it under Documents.
             </p>
@@ -588,18 +588,18 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
               href={letter.url}
               download
               data-testid="letter-download"
-              className="block min-h-11 rounded-lg bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white"
+              className="flex items-center justify-center min-h-11 w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
             >
               Download your demand letter
             </a>
           ) : letterJob.kind === 'DONE' ? (
-            <p role="status" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+            <p role="status" className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
               Your letter is ready. Refresh to download it.
             </p>
           ) : null}
 
           {letter ? (
-            <p className="text-xs text-slate-500" data-testid="letter-record-ref">
+            <p className="text-xs text-gray-500 text-center" data-testid="letter-record-ref">
               Record {letter.recordRef}. The download link is temporary — reopen this
               page to get a fresh one.
             </p>
@@ -608,10 +608,10 @@ export function Recovery({ api, tenancy, onChanged, onBack, className }: Recover
       ) : null}
 
       {rules ? (
-        <StateRules rules={rules} className="mt-6 border-t border-slate-200 pt-4" />
+        <StateRules rules={rules} className="mt-8 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm" />
       ) : rulesUnavailable ? (
         <p
-          className="mt-6 border-t border-slate-200 pt-4 text-xs text-slate-500"
+          className="mt-8 text-xs text-gray-500 text-center"
           data-testid="rules-unavailable"
         >
           The deposit rules for {summary.stateCode} could not be loaded.
