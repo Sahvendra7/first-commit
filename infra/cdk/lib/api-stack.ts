@@ -7,8 +7,8 @@
  * deploy together. What differs between them is their IAM role, and that is the
  * point — §10.3's least-privilege table is reproduced in the grants below.
  *
- * The capture path, `diff-worker` and `doc-worker` are wired here.
- * `clock-sweeper` joins this same stack when its path is built.
+ * The capture path and all three workers — `diff-worker`, `doc-worker` and
+ * `clock-sweeper` — are wired here.
  *
  * ── One function per route, and why that is not a service split ─────────────
  * §3.2 names five *logical* units, of which `api-handler` is one. This stack
@@ -35,11 +35,14 @@ import { HttpJwtAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Architecture, Runtime } from 'aws-cdk-lib/aws-lambda';
 import { Table } from 'aws-cdk-lib/aws-dynamodb';
+import { GSI1_NAME, GSI2_NAME } from './data-stack.js';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Bucket, EventType } from 'aws-cdk-lib/aws-s3';
 import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
 import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { join } from 'node:path';
@@ -92,7 +95,22 @@ export class ApiStack extends Stack {
 
     const { userPool, userPoolClient } = props;
 
-    const table = Table.fromTableName(this, 'HandoverTable', props.tableName);
+    /**
+     * Imported with its indexes named, not by bare name.
+     *
+     * `Table.fromTableName` produces an `ITable` that knows of no global
+     * secondary indexes, so `grantReadWriteData` writes a policy covering
+     * `table/<name>` and nothing else. A `Query` against `GSI2` needs
+     * `table/<name>/index/GSI2`, so `clock-sweeper` — whose entire job is that
+     * query — would have deployed cleanly and then failed with AccessDenied on
+     * its first run, at 03:30, where nobody was looking.
+     *
+     * Declaring the indexes makes the grants include `index/*`.
+     */
+    const table = Table.fromTableAttributes(this, 'HandoverTable', {
+      tableName: props.tableName,
+      globalIndexes: [GSI1_NAME, GSI2_NAME],
+    });
     const evidenceBucket = Bucket.fromBucketName(this, 'EvidenceBucket', props.evidenceBucketName);
     const documentsBucket = Bucket.fromBucketName(
       this,
@@ -385,6 +403,45 @@ export class ApiStack extends Stack {
     });
     getTenancy.addToRolePolicy(signDocumentGrant);
 
+    /* ── clock-sweeper (§5.7, §8.3) ───────────────────────────────────────── */
+
+    /**
+     * The product's thesis on a schedule: find the tenancies whose refund
+     * deadline has lapsed and mark them overdue.
+     *
+     * Small and short, because it does very little per tenancy and reads the
+     * sparse index rather than the table — the work is O(pending), not O(all
+     * data). Five minutes is generous for a backlog that built up while the
+     * sweep was broken.
+     */
+    const clockSweeper = fn('ClockSweeperFn', 'handlers/scheduled/clock-sweeper.ts', {
+      memorySize: 512,
+      timeout: Duration.minutes(5),
+    });
+
+    /**
+     * §10.3: "DDB query on GSI2 + update. No S3, no Bedrock, no SES."
+     *
+     * `grantReadWriteData` covers the index because the GSI's ARN is included
+     * in the table grant. The SES half of that row is moot in this build —
+     * delivery is cut, and the function has no mail client to grant anything
+     * to.
+     */
+    table.grantReadWriteData(clockSweeper);
+
+    /**
+     * §8.3: daily at 09:00 IST. IST is UTC+05:30 and EventBridge schedules in
+     * UTC, so that is 03:30 UTC — the half hour is not a typo, and writing it
+     * as `0 9 * * ?` would fire at 14:30 local.
+     *
+     * India observes no daylight saving, so this fixed offset holds all year.
+     */
+    new Rule(this, 'ClockSweepDaily', {
+      description: 'Handover: daily refund-deadline sweep at 09:00 IST (03:30 UTC)',
+      schedule: Schedule.cron({ minute: '30', hour: '3' }),
+      targets: [new LambdaFunction(clockSweeper)],
+    });
+
     /* ── HTTP API (§5.2) ──────────────────────────────────────────────────── */
 
     const authorizer = new HttpJwtAuthorizer(
@@ -475,5 +532,6 @@ export class ApiStack extends Stack {
     new CfnOutput(this, 'PhotoIngestFunctionName', { value: photoIngest.functionName });
     new CfnOutput(this, 'DiffWorkerFunctionName', { value: diffWorker.functionName });
     new CfnOutput(this, 'DocWorkerFunctionName', { value: docWorker.functionName });
+    new CfnOutput(this, 'ClockSweeperFunctionName', { value: clockSweeper.functionName });
   }
 }
