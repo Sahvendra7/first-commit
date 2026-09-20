@@ -119,6 +119,13 @@ beforeEach(() => {
   process.env['TABLE_NAME'] = 'handover-test';
   process.env['EVIDENCE_BUCKET'] = 'handover-evidence-test';
   process.env['DOCUMENTS_BUCKET'] = 'handover-documents-test';
+  // Sign for real, from static credentials, the way presign-photos.test.ts
+  // does. Without these the signer falls back to the ambient credential chain,
+  // and the happy path then passes or fails according to whether the machine
+  // running the suite happens to be logged into AWS.
+  process.env['AWS_REGION'] = 'ap-south-1';
+  process.env['AWS_ACCESS_KEY_ID'] = 'AKIAIOSFODNN7EXAMPLE';
+  process.env['AWS_SECRET_ACCESS_KEY'] = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
   signing.failFirst = 0;
   signing.calls = 0;
   ddb.on(QueryCommand).resolves({ Items: partition() });
@@ -130,6 +137,8 @@ afterEach(() => {
   delete process.env['TABLE_NAME'];
   delete process.env['EVIDENCE_BUCKET'];
   delete process.env['DOCUMENTS_BUCKET'];
+  delete process.env['AWS_ACCESS_KEY_ID'];
+  delete process.env['AWS_SECRET_ACCESS_KEY'];
 });
 
 describe('GET /diff — the happy path still works', () => {
