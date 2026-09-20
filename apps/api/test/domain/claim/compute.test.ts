@@ -114,6 +114,44 @@ describe('computeClaim — the shortfall', () => {
     expect(claim({ claimedDeductionsPaise: p(5_000_000) }).deductionsExceedDeposit).toBe(false);
   });
 
+  /**
+   * A tenancy with no deposit at all is a degenerate but reachable input:
+   * `paiseSchema` accepts 0 and nothing upstream forbids it. The honest answer
+   * is a settled claim, not a shortfall of zero dressed up as a demand.
+   */
+  it('settles a tenancy with no deposit rather than demanding nothing', () => {
+    const out = claim({ depositPaise: p(0) });
+
+    expect(out.expectedRefundPaise).toBe(0);
+    expect(out.outstanding.amount).toBe(0);
+    expect(out.isSettled).toBe(true);
+    expect(out.totalClaimedPaise).toBe(0);
+  });
+
+  it('claims no interest on a zero deposit even where a rate is asserted', () => {
+    const out = claim({
+      depositPaise: p(0),
+      rule: rule({ statutoryInterestBps: 600 }),
+      asOfDate: '2027-06-01',
+    });
+
+    expect(out.interest).toEqual({ claimed: false, reason: 'NOTHING_OUTSTANDING' });
+    expect(out.totalClaimedPaise).toBe(0);
+  });
+
+  /**
+   * Deductions claimed against a deposit that does not exist. The expected
+   * refund floors at zero, and the overreach is reported as a flag rather than
+   * swallowed — otherwise the letter would have no way to say what happened.
+   */
+  it('flags deductions claimed against a deposit of zero', () => {
+    const out = claim({ depositPaise: p(0), claimedDeductionsPaise: p(1_000_000) });
+
+    expect(out.deductionsExceedDeposit).toBe(true);
+    expect(out.expectedRefundPaise).toBe(0);
+    expect(out.isSettled).toBe(true);
+  });
+
   it('treats deductions exactly equal to the deposit as not an overreach', () => {
     const out = claim({ claimedDeductionsPaise: DEPOSIT });
 
