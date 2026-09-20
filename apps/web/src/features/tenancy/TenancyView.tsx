@@ -10,6 +10,7 @@ import { isRouteNotDeployed, toUserFacingError, type UserFacingError } from '../
 import { awaitIngest, countFor } from '../../lib/ingest.js';
 import { firstMatchedPair, missingPairReason, resolveRooms } from '../../lib/pairing.js';
 import { toDiffAdditions, type MarkedChange } from '../../lib/marked-change.js';
+import { jobForProgress, useJob } from '../../lib/use-job.js';
 import { CompareSlider } from '../compare/CompareSlider.js';
 import { ChangeMarker } from '../compare/ChangeMarker.js';
 import { ConditionSummary } from '../compare/ConditionSummary.js';
@@ -48,6 +49,8 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
   const [error, setError] = useState<UserFacingError>();
   const [notice, setNotice] = useState<string>();
   const [capture, setCapture] = useState<CaptureState>({ kind: 'IDLE' });
+  /** The report/diff job started by closing a phase, while it is being watched. */
+  const [reportJobId, setReportJobId] = useState<string>();
 
   const load = useCallback(async () => {
     setError(undefined);
@@ -85,6 +88,20 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Watches the report or diff job started by closing a phase.
+   *
+   * The aggregate is re-read on completion because that is the moment the
+   * document row appears with a signed URL on it — polling the job and then
+   * not reloading would leave the tenant looking at a finished job with no
+   * document under it.
+   */
+  const { state: reportJob, refresh: refreshReportJob } = useJob(api, reportJobId, {
+    onDone: useCallback(() => {
+      void load();
+    }, [load]),
+  });
 
   const room = rooms.find((r) => r.roomId === roomId);
 
@@ -150,20 +167,20 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
     setCapture({ kind: 'CLOSING' });
     setError(undefined);
     try {
-      const { jobId, status } = await api.completePhase(tenancyId, phase, {
+      const { jobId } = await api.completePhase(tenancyId, phase, {
         declaredPhotoCount: declared,
       });
-      // GET /v1/jobs/{jobId} is not deployed on this stage, so the job cannot
-      // be polled. Report what the server said and stop — inventing progress
-      // would be a fabricated state.
-      setNotice(`Stage submitted. Report job ${jobId} is ${status}.`);
-      await load();
+      // Hand the job to the poller rather than announcing a status that is
+      // already stale by the time it renders. `useJob` reloads the aggregate
+      // when the job finishes, which is when the document actually exists.
+      setNotice(undefined);
+      setReportJobId(jobId);
     } catch (caught) {
       setError(toUserFacingError(caught));
     } finally {
       setCapture({ kind: 'IDLE' });
     }
-  }, [api, load, phase, tenancy, tenancyId]);
+  }, [api, phase, tenancy, tenancyId]);
 
   const saveMarks = useCallback(async () => {
     if (!room || marks.length === 0) return;
@@ -254,6 +271,44 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
         <p role="status" data-testid="ingest-timeout" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {capture.ingested} of {capture.expected} photographs are recorded so far. The rest
           may still be processing — nothing has been lost. Refresh in a moment.
+        </p>
+      ) : null}
+
+      {/*
+        Each job state is a different true statement, so each gets its own
+        sentence. None of them implies the evidence is at risk, because none of
+        them is: the photographs and their timestamps were committed before any
+        of this started.
+      */}
+      {reportJob.kind === 'FAILED' ? (
+        <div role="alert" data-testid="job-failed" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          <strong className="block">The document could not be generated</strong>
+          Your photographs and their timestamps are unaffected. You can try again.
+        </div>
+      ) : null}
+      {reportJob.kind === 'STALLED' ? (
+        <div role="status" data-testid="job-stalled" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <strong className="block">This is taking longer than usual</strong>
+          The document is still being prepared. Nothing has been lost.
+          <button
+            type="button"
+            onClick={refreshReportJob}
+            className="mt-1 block min-h-11 font-semibold underline"
+          >
+            Check again
+          </button>
+        </div>
+      ) : null}
+      {reportJob.kind === 'UNAVAILABLE' ? (
+        <p role="status" data-testid="job-unavailable" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+          Your photographs have been submitted. This deployment cannot report the
+          document&rsquo;s progress, so refresh in a moment to see it.
+        </p>
+      ) : null}
+      {reportJob.kind === 'ERROR' ? (
+        <p role="alert" data-testid="job-error" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          <strong className="block">{reportJob.error.title}</strong>
+          {reportJob.error.detail}
         </p>
       ) : null}
     </>
@@ -371,17 +426,15 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
         documents={tenancy.documents}
         onSelectRoom={setRoomId}
         onGenerateReport={() => void closePhase()}
-        {...(capture.kind === 'CLOSING'
-          ? {
-              job: {
-                jobId: 'pending',
-                type: phase === 'MOVEIN' ? ('CONDITION_REPORT' as const) : ('DIFF' as const),
-                status: 'QUEUED' as const,
-                progressDone: 0,
-                progressTotal: Math.max(1, rooms.length),
-              },
-            }
-          : {})}
+        /*
+         * Only ever the server's own job record. The previous version
+         * synthesised one with `progressTotal: rooms.length` while the request
+         * was in flight, which is a number the server never said — a document
+         * job's total is its own, and for a LETTER it is 1 regardless of how
+         * many rooms there are.
+         */
+        {...(jobForProgress(reportJob) ? { job: jobForProgress(reportJob)! } : {})}
+        busy={capture.kind === 'CLOSING' || reportJob.kind === 'POLLING'}
       />
     </div>
   );

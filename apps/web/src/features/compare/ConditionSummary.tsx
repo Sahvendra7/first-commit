@@ -43,6 +43,13 @@ export interface ConditionSummaryProps {
   readonly onGenerateReport?: () => void;
   /** In-flight report job, so the progress bar is real rather than a spinner. */
   readonly job?: JobStatusResponse;
+  /**
+   * True while a request is in flight that has not yet produced a job record —
+   * the gap between tapping "Generate" and the server answering with a job id.
+   * It disables the button without drawing a progress bar, because there is no
+   * progress to draw yet.
+   */
+  readonly busy?: boolean;
   readonly className?: string;
 }
 
@@ -100,6 +107,7 @@ export function ConditionSummary({
   onSelectRoom,
   onGenerateReport,
   job,
+  busy,
   className,
 }: ConditionSummaryProps) {
   const tallies = useMemo(() => rooms.map((room) => [room, tally(room)] as const), [rooms]);
@@ -117,7 +125,7 @@ export function ConditionSummary({
   );
 
   const roomsWithoutPairs = tallies.filter(([, t]) => t.pairCount === 0);
-  const generating = job?.status === 'QUEUED' || job?.status === 'RUNNING';
+  const generating = busy === true || job?.status === 'QUEUED' || job?.status === 'RUNNING';
   const reportName = phase === 'MOVEIN' ? 'Condition Report' : 'Exit Report';
 
   return (
