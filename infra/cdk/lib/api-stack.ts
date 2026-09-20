@@ -64,6 +64,21 @@ export interface ApiStackProps extends StackProps {
   readonly documentsBucketName: string;
   readonly userPool: IUserPool;
   readonly userPoolClient: IUserPoolClient;
+  /**
+   * Extra browser origins permitted by CORS, beyond the local dev server.
+   *
+   * The deployed front end lives on a CloudFront domain that does not exist
+   * until `WebStack` has been created, so it arrives here as a value rather
+   * than as a cross-stack reference — that would make the API stack
+   * undeployable until the web stack existed, and the two are otherwise
+   * independent. Passed on the command line:
+   *
+   *     cdk deploy HandoverDevApi -c webOrigin=https://dxxxx.cloudfront.net
+   *
+   * An origin is scheme + host (+ port) with no path or trailing slash; the
+   * browser compares it literally.
+   */
+  readonly webOrigins?: readonly string[];
 }
 
 /** Where the handler sources live, relative to this file at synth time. */
@@ -390,7 +405,13 @@ export class ApiStack extends Stack {
           CorsHttpMethod.PATCH,
           CorsHttpMethod.OPTIONS,
         ],
-        allowOrigins: ['http://localhost:5173'],
+        /*
+       * The local dev server, plus whatever deployed front end was passed in.
+       * Never `*`: the API is credentialed by an Authorization header, and a
+       * wildcard origin on a credentialed API is what lets any page on the
+       * internet drive a signed-in tenant's session.
+       */
+      allowOrigins: ['http://localhost:5173', ...(props.webOrigins ?? [])],
         maxAge: Duration.hours(1),
       },
       defaultAuthorizer: authorizer,

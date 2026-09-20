@@ -13,11 +13,20 @@
  * and a millisecond-scale interval instead. `intervalMs` and `ceilingMs` are
  * injectable for exactly this reason.
  */
-import { describe, expect, it, vi } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import type { JobStatusResponse } from '@handover/shared';
 import { useJob, jobForProgress } from './use-job.js';
 import { ApiError, NetworkError, type HandoverApiClient } from './api-client.js';
+
+/*
+ * Unmounts every hook between tests. Without it a test that leaves a job
+ * RUNNING keeps polling after its test has finished — and after the whole file
+ * has finished, the next `setState` lands on a torn-down jsdom and surfaces as
+ * an unhandled `ReferenceError: window is not defined` that fails the run
+ * while every test still reports green.
+ */
+afterEach(cleanup);
 
 /** Short enough to keep the suite fast, long enough to observe a settle. */
 const FAST = { intervalMs: 5, ceilingMs: 10_000 } as const;
