@@ -1,0 +1,74 @@
+{
+  "_status": "DRAFT_PENDING_LEGAL_REVIEW",
+  "_notice": [
+    "Every figure, citation, deadline and authority name in this file was drafted",
+    "by a developer from secondary sources and has NOT been reviewed by anyone",
+    "qualified to confirm it. It must not be demoed to a real tenant or used to",
+    "generate a letter until a human has checked each field against the primary",
+    "source and set `lastReviewedAt`.",
+    "",
+    "`lastReviewedAt` is deliberately ABSENT rather than filled in with today's",
+    "date. Its absence is the signal (R9): the UI omits the 'rules last reviewed'",
+    "line when it is missing, so an unreviewed table cannot masquerade as a",
+    "reviewed one. Adding the date is the act of taking responsibility for the",
+    "contents, and only a human can do that.",
+    "",
+    "architecture.md §9.2 and the demo-safety skill: statutory references,",
+    "deadlines, authority names and interest figures come from this table and from",
+    "code, NEVER from a model. That rule exists because a model will produce",
+    "confident, plausible, wrong law. It applies to how this file was written as",
+    "much as to how it is read."
+  ],
+
+  "stateCode": "KA",
+  "stateName": "Karnataka",
+
+  "_mtaAdopted_note": "Karnataka had not notified the Model Tenancy Act 2021 as state law at the time of drafting. VERIFY: a state that has since adopted it changes the deposit cap and the forum.",
+  "mtaAdopted": false,
+
+  "_depositCapMonths_note": "The Karnataka Rent Act 1999 is the operative statute and, unlike the MTA's 2-month residential cap, does not impose a general cap that is reliably enforced in practice; Bengaluru market practice is commonly 6-10 months. 0 encodes 'no statutory cap asserted' and must not be displayed as 'the cap is zero'. VERIFY before any UI copy depends on it.",
+  "depositCapMonths": 0,
+
+  "_refundWindowDays_note": "No statutory refund window is asserted here. 30 days is the common contractual term and is used as the default clock only where the tenancy agreement is silent. VERIFY: this drives the refund deadline printed in a demand letter, so a wrong number here is the R9 failure the review date exists to surface.",
+  "refundWindowDays": 30,
+
+  "_statutoryInterestBps_note": "Integer basis points (600 bps = 6.00% per annum). 0 encodes 'no statutory interest rate asserted for Karnataka'. The claim arithmetic must treat 0 as 'no interest claim', never as a rate to multiply by.",
+  "statutoryInterestBps": 0,
+
+  "_authorityName_note": "VERIFY the correct forum and its current name before this appears in a letter.",
+  "authorityName": "Court of Small Causes, Bengaluru",
+
+  "escalationSteps": [
+    {
+      "order": 0,
+      "label": "Written demand to the landlord",
+      "description": "Send a dated, itemised demand for the deposit, attaching the condition report and the move-out comparison. Keep proof of delivery.",
+      "afterDays": 0
+    },
+    {
+      "order": 1,
+      "label": "Legal notice",
+      "description": "A formal notice through an advocate, restating the demand and a deadline to pay. Many disputes settle at this step.",
+      "afterDays": 15
+    },
+    {
+      "order": 2,
+      "label": "Civil suit for recovery",
+      "description": "A suit for recovery of the deposit. Small-value claims may be filed in the Court of Small Causes. Consult an advocate about forum, limitation and court fees.",
+      "afterDays": 30
+    }
+  ],
+
+  "statuteRefs": [
+    {
+      "citation": "Karnataka Rent Act, 1999",
+      "title": "Karnataka Rent Act, 1999 — the operative rent legislation for Karnataka",
+      "url": "https://dpal.karnataka.gov.in/"
+    },
+    {
+      "citation": "Model Tenancy Act, 2021",
+      "title": "Model Tenancy Act, 2021 — central model law; adopted by a state only on notification",
+      "url": "https://mohua.gov.in/"
+    }
+  ]
+}
