@@ -106,7 +106,22 @@ describe('demo evidence shape', () => {
     expect(DEMO_ROOMS.map((r) => r.orderIndex)).toEqual([0, 1, 2, 3]);
   });
 
-  it('reports server-side photo counts that match the seeded photos', () => {
+  /*
+   * The demo opens on a tenancy nobody has captured yet, so the walkthrough can
+   * start at move-in rather than at the end. The counts are what the server has
+   * ingested so far and begin at zero; `photos` is the pool the later comparison
+   * draws from. `DemoApiClient.presignPhotos` is what moves the counts up.
+   */
+  it('opens with nothing captured, so the journey starts at the beginning', () => {
+    expect(demoTenancy.tenancy.status).toBe('MOVEIN_PENDING');
+    for (const room of demoTenancy.rooms) {
+      expect(room.photoCountMovein).toBe(0);
+      expect(room.photoCountMoveout).toBe(0);
+    }
+    expect(demoTenancy.documents).toEqual([]);
+  });
+
+  it('still carries a full paired photo pool for the comparison', () => {
     for (const room of demoTenancy.rooms) {
       const movein = demoTenancy.photos.filter(
         (p) => p.roomId === room.roomId && p.phase === 'MOVEIN',
@@ -114,8 +129,8 @@ describe('demo evidence shape', () => {
       const moveout = demoTenancy.photos.filter(
         (p) => p.roomId === room.roomId && p.phase === 'MOVEOUT',
       );
-      expect(room.photoCountMovein).toBe(movein.length);
-      expect(room.photoCountMoveout).toBe(moveout.length);
+      expect(movein.length).toBeGreaterThan(0);
+      expect(movein.map((p) => p.pairIndex)).toEqual(moveout.map((p) => p.pairIndex));
     }
   });
 

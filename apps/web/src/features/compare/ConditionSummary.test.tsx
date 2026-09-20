@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { DiffChange, JobStatusResponse, RoomDiffView } from '@handover/shared';
 import { demoDiff } from '../../lib/demo/diff.js';
-import { demoTenancy } from '../../lib/demo/tenancy.js';
+import { demoConditionReport, demoTenancy } from '../../lib/demo/tenancy.js';
 import { ConditionSummary } from './ConditionSummary.js';
 
 afterEach(cleanup);
@@ -303,8 +303,10 @@ describe('ConditionSummary — generating the report', () => {
 
 describe('ConditionSummary — documents', () => {
   it('lists a generated document with its record reference and a download', () => {
-    renderSummary({ documents: demoTenancy.documents });
-    const doc = demoTenancy.documents[0]!;
+    // The seeded tenancy now starts before any document exists, so this
+    // supplies one rather than depending on the fixture's opening state.
+    const doc = demoConditionReport;
+    renderSummary({ documents: [doc] });
     expect(screen.getByText('Condition Report')).toBeDefined();
     expect(screen.getByText(`Record ${doc.recordRef}`)).toBeDefined();
     const link = screen.getByRole('link', { name: 'Download PDF' }) as HTMLAnchorElement;
@@ -312,7 +314,7 @@ describe('ConditionSummary — documents', () => {
   });
 
   it('offers no send action — email delivery is cut from this build', () => {
-    const { container } = renderSummary({ documents: demoTenancy.documents });
+    const { container } = renderSummary({ documents: [demoConditionReport] });
     expect(container.textContent).not.toMatch(/email|send to landlord/i);
   });
 
