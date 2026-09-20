@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { App } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -17,6 +20,8 @@ import { ApiStack } from '../lib/api-stack.js';
  */
 
 let template: Template;
+/** Where this test's app staged its assets, so the bundle can be inspected. */
+let outdir: string;
 
 interface SynthesisedRoute {
   Properties: { RouteKey: string; AuthorizationType?: string; AuthorizerId?: unknown };
@@ -32,7 +37,11 @@ const routeFor = (routeKey: string): SynthesisedRoute => {
 };
 
 beforeAll(() => {
-  const app = new App();
+  // An explicit outdir so the synthesised Lambda bundles land somewhere this
+  // file can read them back — the prompt-bundling assertion below needs the
+  // staged asset directory, not just the template.
+  outdir = mkdtempSync(join(tmpdir(), 'handover-cdk-test-'));
+  const app = new App({ outdir });
   const env = { account: '123456789012', region: 'ap-south-1' };
   const auth = new AuthStack(app, 'TestAuth', { env });
   const api = new ApiStack(app, 'TestApi', {
@@ -125,21 +134,21 @@ describe('runtime defaults (§12, §13.3)', () => {
   });
 });
 
-describe('least privilege (§10.3)', () => {
-  /** The actions on one function's default role policy, flattened. */
-  const actionsFor = (logicalIdPrefix: string): string[] => {
-    const entry = Object.entries(template.findResources('AWS::IAM::Policy')).find(([id]) =>
-      id.startsWith(`${logicalIdPrefix}ServiceRoleDefaultPolicy`),
-    );
-    if (!entry) throw new Error(`No default policy for ${logicalIdPrefix}`);
-    const statements = (
-      entry[1] as { Properties: { PolicyDocument: { Statement: { Action?: string | string[] }[] } } }
-    ).Properties.PolicyDocument.Statement;
-    return statements.flatMap((s) =>
-      s.Action === undefined ? [] : Array.isArray(s.Action) ? s.Action : [s.Action],
-    );
-  };
+/** The actions on one function's default role policy, flattened. */
+const actionsFor = (logicalIdPrefix: string): string[] => {
+  const entry = Object.entries(template.findResources('AWS::IAM::Policy')).find(([id]) =>
+    id.startsWith(`${logicalIdPrefix}ServiceRoleDefaultPolicy`),
+  );
+  if (!entry) throw new Error(`No default policy for ${logicalIdPrefix}`);
+  const statements = (
+    entry[1] as { Properties: { PolicyDocument: { Statement: { Action?: string | string[] }[] } } }
+  ).Properties.PolicyDocument.Statement;
+  return statements.flatMap((s) =>
+    s.Action === undefined ? [] : Array.isArray(s.Action) ? s.Action : [s.Action],
+  );
+};
 
+describe('least privilege (§10.3)', () => {
   /**
    * §10.3, verbatim: "`api-handler` — `s3:PutObject` on a prefix (for presign)
    * but **not** `s3:GetObject`."
@@ -197,6 +206,94 @@ describe('least privilege (§10.3)', () => {
     for (const action of ['s3:DeleteObject', 's3:DeleteObjectVersion', 's3:PutBucketVersioning']) {
       expect(everything).not.toContain(action);
     }
+  });
+});
+
+describe('diff-worker (§5.5, §9.1, §10.3)', () => {
+  const diffWorker = (): { Properties: Record<string, unknown> } => {
+    const entry = Object.entries(template.findResources('AWS::Lambda::Function')).find(([id]) =>
+      id.startsWith('DiffWorkerFn'),
+    );
+    if (!entry) throw new Error('No DiffWorkerFn in the template');
+    return entry[1] as { Properties: Record<string, unknown> };
+  };
+
+  it('is sized as §5.5 specifies: 300s, 1024 MB', () => {
+    const props = diffWorker().Properties;
+    expect(props['Timeout']).toBe(300);
+    expect(props['MemorySize']).toBe(1024);
+  });
+
+  it('runs on Node 20, ARM64, like every other function', () => {
+    const props = diffWorker().Properties;
+    expect(props['Runtime']).toBe('nodejs20.x');
+    expect(props['Architectures']).toEqual(['arm64']);
+  });
+
+  it('is not exposed as an HTTP route — it is invoked, never called', () => {
+    const keys = routes().map((r) => r.Properties.RouteKey);
+    expect(keys.some((k) => k.toLowerCase().includes('diff-worker'))).toBe(false);
+    expect(keys.some((k) => k.toLowerCase().includes('worker'))).toBe(false);
+  });
+
+  it('reads evidence and writes the table, and nothing else touches S3 writes', () => {
+    const actions = actionsFor('DiffWorkerFn');
+    // `grantRead` emits `s3:GetObject*`, so match the prefix rather than the
+    // exact action — the same shape `photo-ingest` carries.
+    expect(actions.some((a) => a.startsWith('s3:GetObject'))).toBe(true);
+    expect(actions.filter((a) => a.startsWith('s3:Put'))).toEqual([]);
+    expect(actions).toContain('dynamodb:PutItem');
+  });
+
+  it('reads its model id and feature flag from SSM, and its key from Secrets Manager', () => {
+    const actions = actionsFor('DiffWorkerFn');
+    expect(actions).toContain('ssm:GetParameter');
+    expect(actions).toContain('secretsmanager:GetSecretValue');
+  });
+
+  /**
+   * §9.1: `bedrock-runtime` is unauthorised on this account, so the diff path
+   * goes over HTTPS to bedrock-mantle. Granting `bedrock:InvokeModel` anyway —
+   * because an IAM table lists it — would be a permission the code cannot use,
+   * which is the wildcard-by-another-name §10.3 forbids. The grant arrives
+   * with the Converse adapter that needs it, not before.
+   */
+  it('holds no Bedrock permission it cannot use', () => {
+    expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).not.toContain('bedrock:');
+  });
+
+  it('is invokable by complete-phase and by no other HTTP function', () => {
+    const invokers = Object.entries(template.findResources('AWS::IAM::Policy')).filter(([, policy]) =>
+      JSON.stringify(policy).includes('lambda:InvokeFunction'),
+    );
+
+    expect(invokers).toHaveLength(1);
+    expect(invokers[0]?.[0]).toMatch(/^CompletePhaseFn/);
+  });
+
+  it('tells complete-phase which function to invoke', () => {
+    const complete = Object.entries(template.findResources('AWS::Lambda::Function')).find(([id]) =>
+      id.startsWith('CompletePhaseFn'),
+    );
+    const env = (complete?.[1] as { Properties: { Environment?: { Variables?: Record<string, unknown> } } })
+      .Properties.Environment?.Variables;
+
+    expect(env).toHaveProperty('DIFF_WORKER_FUNCTION_NAME');
+  });
+
+  /**
+   * The prompts are Markdown read from disk at cold start (§9.3). esbuild
+   * bundles JavaScript only, so without the `afterBundling` copy the function
+   * deploys cleanly and then throws on its first invocation — the kind of
+   * failure that only shows up in the deployed environment.
+   */
+  it('ships the prompt files in the worker bundle', () => {
+    const asset = (diffWorker().Properties['Code'] as { S3Key: string }).S3Key;
+    const hash = asset.split('.')[0];
+    const dir = join(outdir, `asset.${hash}`);
+
+    expect(existsSync(join(dir, 'prompts', 'v1', 'room-diff.md'))).toBe(true);
+    expect(existsSync(join(dir, 'prompts', 'v2', 'room-diff.md'))).toBe(true);
   });
 });
 

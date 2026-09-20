@@ -7,8 +7,22 @@
  * deploy together. What differs between them is their IAM role, and that is the
  * point — §10.3's least-privilege table is reproduced in the grants below.
  *
- * Only the capture-path functions are wired here. `diff-worker`, `doc-worker`
- * and `clock-sweeper` join this same stack when their paths are built.
+ * The capture path and `diff-worker` are wired here. `doc-worker` and
+ * `clock-sweeper` join this same stack when their paths are built.
+ *
+ * ── One function per route, and why that is not a service split ─────────────
+ * §3.2 names five *logical* units, of which `api-handler` is one. This stack
+ * deploys each HTTP route as its own `NodejsFunction`, which looks like a
+ * finer split than the document describes and is not one: every function is
+ * built from the same `apps/api/src` tree, shares the same domain modules and
+ * the same table, and they version and deploy together — the §3.2 test for
+ * "deployment unit, not service boundary". What the split buys is the §10.3
+ * IAM table, which grants different permissions to different routes:
+ * `presign-photos` needs `s3:PutObject` and the read paths need `s3:GetObject`
+ * and the two must not be the same role, and only `complete-phase` may invoke
+ * a worker. Collapsing them into one function to match the document's noun
+ * would mean one role holding the union of every grant, which is the thing
+ * §10.3 is written to prevent.
  */
 import { CfnOutput, Duration, Stack, Tags } from 'aws-cdk-lib';
 import {
@@ -26,6 +40,8 @@ import { LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { Bucket, EventType } from 'aws-cdk-lib/aws-s3';
 import { LambdaDestination } from 'aws-cdk-lib/aws-s3-notifications';
 import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
+import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import { join } from 'node:path';
 import type { StackProps } from 'aws-cdk-lib';
 import type { IUserPool, IUserPoolClient } from 'aws-cdk-lib/aws-cognito';
@@ -203,6 +219,95 @@ export class ApiStack extends Stack {
       { prefix: 'tenancies/' },
     );
 
+    /* ── diff-worker (§5.5) ───────────────────────────────────────────────── */
+
+    /**
+     * §5.5's sizing, exactly: timeout 300s, memory 1024 MB.
+     *
+     * Both numbers are load-bearing rather than round. The adapter samples one
+     * pair N=5 times (§9.5) and a room may hold up to three pairs (§9.4), so a
+     * six-room tenancy is a long sequential walk even with the per-pair fan-out
+     * — 30s would not clear one room. The memory is for holding two whole 8 MB
+     * images plus their base64 expansion while the request body is built.
+     */
+    const diffWorker = fn('DiffWorkerFn', 'handlers/events/diff-worker.ts', {
+      memorySize: 1024,
+      timeout: Duration.minutes(5),
+      bundling: {
+        ...defaults.bundling,
+        /**
+         * The prompts are Markdown files the registry reads from disk at cold
+         * start (§9.3: prompts are versioned artifacts, never inline strings),
+         * and esbuild bundles JavaScript only — without this copy the function
+         * starts, finds no `room-diff.md`, and throws. The registry throws
+         * loudly rather than serving an empty prompt precisely so that a
+         * forgotten copy step fails at cold start instead of silently sending
+         * the model no instructions.
+         */
+        commandHooks: {
+          beforeBundling: (): string[] => [],
+          beforeInstall: (): string[] => [],
+          afterBundling: (inputDir: string, outputDir: string): string[] => [
+            `mkdir -p ${outputDir}/prompts`,
+            `cp -r ${inputDir}/apps/api/src/prompts/v1 ${inputDir}/apps/api/src/prompts/v2 ${outputDir}/prompts/`,
+          ],
+        },
+      },
+    });
+
+    // §10.3: `s3:GetObject` on evidence and DynamoDB read/write. It reads the
+    // photographs and writes DIFF items, the diff cache and job progress.
+    evidenceBucket.grantRead(diffWorker, 'tenancies/*');
+    table.grantReadWriteData(diffWorker);
+
+    /**
+     * The model configuration, read at runtime rather than baked in (§10.3:
+     * "no secret is ever in an environment variable or in the repository").
+     *
+     * Note what is **not** granted: `bedrock:InvokeModel`. The skill's IAM
+     * table lists it for this function, and it is deliberately omitted — it
+     * would be a permission this code cannot use. `bedrock-runtime` is
+     * unauthorised on this account (§9.1), so the working path is the
+     * bedrock-mantle Chat Completions endpoint over HTTPS with a bearer token
+     * from Secrets Manager. Granting an unused action to satisfy a table would
+     * be exactly the wildcard-by-another-name that §10.3 forbids. When the
+     * support case clears and the Converse adapter lands, the grant arrives
+     * with the code that calls it.
+     */
+    diffWorker.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['ssm:GetParameter'],
+        resources: [
+          StringParameter.fromStringParameterName(this, 'ModelIdParam', '/handover/dev/bedrock/model-id')
+            .parameterArn,
+          StringParameter.fromStringParameterName(this, 'AiFlagParam', '/handover/dev/ai/diff-enabled')
+            .parameterArn,
+        ],
+      }),
+    );
+
+    diffWorker.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        // Suffixed because Secrets Manager appends six random characters to a
+        // secret's ARN; naming the bare path would match nothing.
+        resources: [
+          Secret.fromSecretNameV2(this, 'BedrockApiKey', '/handover/dev/bedrock/api-key')
+            .secretArn + '-??????',
+        ],
+      }),
+    );
+
+    /**
+     * §8.2's `A-)F: async invoke`, and the narrowest form of it: **only**
+     * `complete-phase` may invoke a worker, and only this one. The other six
+     * HTTP functions get no `lambda:InvokeFunction` at all.
+     */
+    diffWorker.grantInvoke(completePhase);
+    completePhase.addEnvironment('DIFF_WORKER_FUNCTION_NAME', diffWorker.functionName);
+
     /* ── HTTP API (§5.2) ──────────────────────────────────────────────────── */
 
     const authorizer = new HttpJwtAuthorizer(
@@ -284,5 +389,6 @@ export class ApiStack extends Stack {
 
     new CfnOutput(this, 'ApiUrl', { value: this.httpApi.apiEndpoint });
     new CfnOutput(this, 'PhotoIngestFunctionName', { value: photoIngest.functionName });
+    new CfnOutput(this, 'DiffWorkerFunctionName', { value: diffWorker.functionName });
   }
 }
