@@ -529,6 +529,31 @@ export class ApiStack extends Stack {
     Tags.of(this).add('handover:stack', 'api');
 
     new CfnOutput(this, 'ApiUrl', { value: this.httpApi.apiEndpoint });
+
+    /**
+     * The deployed front-end origins currently in the allow-list.
+     *
+     * Emitted so the allow-list can be read back from outside the stack with
+     * nothing but `cloudformation:DescribeStacks` — no `apigatewayv2`
+     * permission — which is what lets a redeploy carry the existing origin
+     * forward instead of silently dropping it.
+     *
+     * `webOrigins` is a deploy-time parameter, not a cross-stack reference
+     * (see `bin/handover.ts`), so a deploy that forgets it does not leave the
+     * allow-list alone: it removes the front end from CORS. CI reads this
+     * output before it deploys and passes the value straight back, so the
+     * deployed app keeps working across a deploy that has not yet reached the
+     * step that sets the origin — and keeps working if that step never runs.
+     *
+     * Absent, rather than empty, when there is no deployed front end: that is
+     * the honest representation of "nothing but localhost is allowed", and it
+     * is the state before the first front-end deploy.
+     */
+    const declaredOrigins = props.webOrigins ?? [];
+    if (declaredOrigins.length > 0) {
+      new CfnOutput(this, 'WebOrigins', { value: declaredOrigins.join(',') });
+    }
+
     new CfnOutput(this, 'PhotoIngestFunctionName', { value: photoIngest.functionName });
     new CfnOutput(this, 'DiffWorkerFunctionName', { value: diffWorker.functionName });
     new CfnOutput(this, 'DocWorkerFunctionName', { value: docWorker.functionName });

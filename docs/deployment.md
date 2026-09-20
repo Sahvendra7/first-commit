@@ -50,6 +50,75 @@ Never `*`. The API is credentialed by an `Authorization` header, and a wildcard
 origin on a credentialed API is what lets any page on the internet drive a
 signed-in tenant's session.
 
+## Continuous deployment
+
+A push to `main` deploys the Dev stage. `.github/workflows/deploy.yml` runs
+`lint`, `typecheck` and `test` first and assumes no AWS credentials until all
+three pass, then:
+
+1. Read the `WebOrigins` output of `HandoverDevApi` — the origin the allow-list
+   already carries. Empty on the first ever run.
+2. `cdk deploy --all --require-approval never`, passing that origin back as
+   `-c webOrigin=…`. Data, Auth, Api. Not Web: the CloudFront stack stays
+   behind `-c hosting=cloudfront` (below), so `--all` cannot fail on a stack
+   this account is not allowed to create.
+3. `apps/web/scripts/deploy.sh` — the same script as the manual path, with the
+   same refusals and the same smoke test. `WEB_URL_OUT` makes it write the
+   deployed URL to a file.
+4. `cdk deploy HandoverDevApi -c webOrigin=<that URL>` — the allow-list fed
+   from the origin that actually exists. A no-op once the URL is stable.
+
+Step 1 is why `ApiStack` publishes `WebOrigins` at all. `webOrigin` is a
+deploy-time parameter, not a cross-stack reference, so a deploy that omits it
+does not leave CORS alone — it drops the front end out of the allow-list.
+Without the read-back, every push would lock the live app out of its own API
+from step 2 until step 4, and leave it locked out if anything between them
+failed.
+
+The concurrency group is `deploy-dev` with `cancel-in-progress: false`. A
+second push waits rather than interrupting: a half-applied change set is worse
+than a queued one, and the front-end upload is a publication.
+
+### One-time setup
+
+`cdk bootstrap` must have been run in `ap-south-1` — CI assumes the bootstrap
+roles rather than holding deploy permissions itself.
+
+```bash
+aws cloudformation deploy \
+  --region ap-south-1 \
+  --template-file infra/github-oidc.yaml \
+  --stack-name handover-github-oidc \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+Pass `--parameter-overrides CreateOidcProvider=no` if the account already has a
+`token.actions.githubusercontent.com` provider; an account may hold only one.
+
+Then set the role ARN as the repository secret `AWS_DEPLOY_ROLE_ARN`:
+
+```bash
+aws cloudformation describe-stacks --region ap-south-1 \
+  --stack-name handover-github-oidc \
+  --query "Stacks[0].Outputs[?OutputKey=='DeployRoleArn'].OutputValue" --output text
+```
+
+That ARN is the only secret the workflow needs and the only place the account
+id lives outside AWS. There is no access key: GitHub presents an OIDC token and
+STS returns a session that expires in an hour.
+
+### What CI may and may not do
+
+The trust policy matches both the `aud` and `sub` claims exactly, so only
+`Sahvendra7/first-commit` on `refs/heads/main` can assume the role — a fork's
+pull request carries a different `sub` and is refused even if it rewrites the
+workflow. The role's own permissions are three `sts:AssumeRole` calls on the
+CDK bootstrap roles, `cloudformation:DescribeStacks` on `Handover*`, and the
+eight Amplify calls the deploy script makes. It cannot delete an Amplify app,
+cannot read or write a bucket directly, and cannot edit IAM — including its
+own policy. Widening what CI can deploy is a change to the bootstrap roles or
+to `infra/github-oidc.yaml`, applied by a human with admin credentials.
+
 ## Hosting: why Amplify, for now
 
 `infra/cdk/lib/web-stack.ts` describes S3 + CloudFront with Origin Access

@@ -485,11 +485,62 @@ describe('clock-sweeper (§5.7, §8.3, §10.3)', () => {
 });
 
 describe('CORS (§5.1)', () => {
+  /**
+   * A stack synthesised with a given allow-list. Its own app and outdir, so it
+   * cannot disturb the shared template the rest of this file asserts against.
+   */
+  const withOrigins = (webOrigins?: readonly string[]): Template => {
+    const app = new App({ outdir: mkdtempSync(join(tmpdir(), 'handover-cors-test-')) });
+    const env = { account: '123456789012', region: 'ap-south-1' };
+    const auth = new AuthStack(app, 'CorsAuth', { env });
+    return Template.fromStack(
+      new ApiStack(app, 'CorsApi', {
+        env,
+        tableName: 'test-table',
+        evidenceBucketName: 'test-evidence',
+        documentsBucketName: 'test-documents',
+        userPool: auth.userPool,
+        userPoolClient: auth.userPoolClient,
+        ...(webOrigins ? { webOrigins } : {}),
+      }),
+    );
+  };
+
   it('allows the methods the frontend actually issues', () => {
     template.hasResourceProperties('AWS::ApiGatewayV2::Api', {
       CorsConfiguration: Match.objectLike({
         AllowMethods: Match.arrayWith(['GET', 'POST', 'PATCH']),
       }),
     });
+  });
+
+  it('never allows a wildcard origin', () => {
+    const origins = withOrigins(['https://main.example.amplifyapp.com']).findResources(
+      'AWS::ApiGatewayV2::Api',
+    );
+    const config = Object.values(origins)[0] as {
+      Properties: { CorsConfiguration: { AllowOrigins: string[] } };
+    };
+
+    expect(config.Properties.CorsConfiguration.AllowOrigins).not.toContain('*');
+  });
+
+  /**
+   * The allow-list has to be readable from outside the stack, because
+   * `webOrigins` is a deploy-time parameter: a deploy that omits it drops the
+   * front end out of CORS. CI reads this output before deploying and hands the
+   * value back, so the origin survives a deploy that has not yet reached the
+   * step that sets it.
+   */
+  it('publishes the deployed origin as an output, so a redeploy can carry it forward', () => {
+    withOrigins(['https://main.example.amplifyapp.com']).hasOutput('WebOrigins', {
+      Value: 'https://main.example.amplifyapp.com',
+    });
+  });
+
+  it('publishes no such output before a front end exists', () => {
+    const outputs = withOrigins().findOutputs('*');
+
+    expect(Object.keys(outputs)).not.toContain('WebOrigins');
   });
 });

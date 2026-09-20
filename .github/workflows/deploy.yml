@@ -4,8 +4,11 @@ on:
   push:
     branches: [main]
 
+# Never cancel a deploy in flight. A half-applied CloudFormation change set is
+# worse than a queued one, and the front-end upload is a publication that
+# cannot be undone by deleting a file.
 concurrency:
-  group: deploy-prod
+  group: deploy-dev
   cancel-in-progress: false
 
 permissions:
@@ -17,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ap-south-1
+      STAGE: Dev
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,7 +29,72 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # Nothing below this point runs unless all three pass. The deploy role is
+      # not even assumed until the tree is known good.
       - run: pnpm lint
+      - run: pnpm typecheck
       - run: pnpm test
-      # Assume-role via OIDC, then `cdk deploy --all`, then build + deploy web.
-      # No AWS account ID is committed here — it comes from the repo secret.
+
+      # OIDC: a short-lived token exchanged for a role session. No access key
+      # lives in this repository or in its secrets — the only secret is the
+      # role ARN, which is where the account id stays out of a committed file
+      # (docs/architecture.md §10.3).
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-deploy-${{ github.run_id }}
+
+      # `webOrigin` is a deploy-time parameter, so deploying the API without it
+      # does not leave the CORS allow-list alone — it removes the front end
+      # from it. Read the origin already deployed and carry it through the
+      # stack deploy, or the live app is locked out of its own API for the
+      # minutes until the last step restores it, and stays locked out if
+      # anything in between fails. Empty on the first run: no stack, no front
+      # end, nothing to preserve.
+      - name: Read the origin currently allowed through CORS
+        id: cors
+        run: |
+          ORIGIN="$(aws cloudformation describe-stacks \
+            --stack-name "Handover${STAGE}Api" \
+            --query "Stacks[0].Outputs[?OutputKey=='WebOrigins'].OutputValue" \
+            --output text 2>/dev/null || true)"
+          if [[ "${ORIGIN}" == "None" ]]; then ORIGIN=""; fi
+          echo "origin=${ORIGIN}" >> "${GITHUB_OUTPUT}"
+          echo "Currently allowed: ${ORIGIN:-<none yet>}"
+
+      # `--all` is Data, Auth and Api. It is *not* Web: `bin/handover.ts` only
+      # creates WebStack under `-c hosting=cloudfront`, and CloudFront is not
+      # available on this account, so the gate keeps `--all` from failing on a
+      # stack that cannot succeed. Deliberate — see docs/deployment.md.
+      - name: Deploy the stacks
+        env:
+          KNOWN_ORIGIN: ${{ steps.cors.outputs.origin }}
+        run: |
+          CTX=()
+          if [[ -n "${KNOWN_ORIGIN}" ]]; then CTX=(-c "webOrigin=${KNOWN_ORIGIN}"); fi
+          pnpm --filter @handover/cdk exec cdk deploy --all \
+            --require-approval never "${CTX[@]}"
+
+      # Builds from the stack outputs just deployed, refuses to upload a bundle
+      # that is credential-shaped, demo-mode or unconfigured, and smoke-tests
+      # the result. WEB_URL_OUT is where it leaves the URL for the next step.
+      - name: Deploy the front end
+        env:
+          WEB_URL_OUT: ${{ runner.temp }}/web-url
+        run: apps/web/scripts/deploy.sh
+
+      # The API's CORS allow-list is a parameter, not a cross-stack reference,
+      # so the origin has to be fed back after the front end exists. Idempotent:
+      # once the Amplify URL is stable this is a no-op change set. Never `*` —
+      # a wildcard origin on a credentialed API hands any page on the internet
+      # a signed-in tenant's session.
+      - name: Allow the deployed origin through the API's CORS
+        run: |
+          WEB_URL="$(cat "${RUNNER_TEMP}/web-url")"
+          echo "Front end: ${WEB_URL}"
+          pnpm --filter @handover/cdk exec cdk deploy "Handover${STAGE}Api" \
+            --require-approval never \
+            -c "webOrigin=${WEB_URL}"

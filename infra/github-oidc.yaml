@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The role GitHub Actions assumes to deploy Handover. Applied once, by hand,
+# with admin credentials:
+#
+#   aws cloudformation deploy \
+#     --region ap-south-1 \
+#     --template-file infra/github-oidc.yaml \
+#     --stack-name handover-github-oidc \
+#     --capabilities CAPABILITY_NAMED_IAM
+#
+# ── Why this is not a CDK stack ──────────────────────────────────────────────
+#
+# Two reasons. The stack split is exactly four and this would be a fifth. And a
+# role that grants the right to deploy should not be deployed by the thing it
+# authorises: CI would be able to widen its own permissions, which is the one
+# privilege escalation an OIDC setup exists to prevent. It is applied once, out
+# of band, and changes only when a human decides it should.
+#
+# ── What it does not do ──────────────────────────────────────────────────────
+#
+# No access key is created here, and none exists. GitHub presents a short-lived
+# OIDC token; STS exchanges it for a session that expires in an hour. The only
+# thing the repository holds is the role ARN, in a secret — which is also how
+# the account id stays out of every committed file (§10.3).
+# ─────────────────────────────────────────────────────────────────────────────
+
+Description: >-
+  GitHub Actions OIDC deploy role for Handover. Trusts one repository, on one
+  branch, and can assume only the CDK bootstrap roles plus the Amplify calls
+  the front-end deploy script makes.
+
+Parameters:
+  GitHubRepository:
+    Type: String
+    Default: Sahvendra7/first-commit
+    Description: owner/repo allowed to assume the role.
+
+  BranchRef:
+    Type: String
+    Default: refs/heads/main
+    Description: >-
+      The only git ref allowed to assume the role. A pull request from a fork
+      carries a different `sub` claim and is refused by the trust policy, so an
+      untrusted branch cannot deploy even if it edits the workflow.
+
+  CreateOidcProvider:
+    Type: String
+    AllowedValues: ['yes', 'no']
+    Default: 'yes'
+    Description: >-
+      'no' if this account already has a token.actions.githubusercontent.com
+      provider. An account may hold only one, and a second create fails.
+
+  CdkQualifier:
+    Type: String
+    Default: hnb659fds
+    Description: >-
+      The CDK bootstrap qualifier. `hnb659fds` is the default and is what
+      `cdk bootstrap` uses unless it was given --qualifier.
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateOidcProvider, 'yes']
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      # IAM validates this provider against the root CAs and no longer relies
+      # on the thumbprint, but CloudFormation still wants the field. Both of
+      # GitHub's published values are listed so a rotation of either is a
+      # no-op here.
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: handover-github-deploy
+      Description: Assumed by GitHub Actions to deploy the Handover Dev stage.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - MakeProvider
+                - !Ref GitHubOidcProvider
+                - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                # Both claims are matched exactly. `aud` alone would let any
+                # GitHub repository in the world assume this role; `sub` alone
+                # would accept a token minted for another audience.
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:ref:${BranchRef}
+
+      Policies:
+        # ── The CDK half ─────────────────────────────────────────────────────
+        # The role cannot touch CloudFormation, S3, DynamoDB, Cognito, Lambda
+        # or IAM itself. All it can do is assume the three bootstrap roles,
+        # which are what actually hold the deploy permissions and are scoped by
+        # `cdk bootstrap` to this account and region. Widening what CI may
+        # deploy is therefore a bootstrap decision, not an edit to a workflow
+        # file. Image publishing is absent: the Lambdas are esbuild bundles,
+        # file assets, not container images.
+        - PolicyName: AssumeCdkBootstrapRoles
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sts:AssumeRole
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-${CdkQualifier}-deploy-role-${AWS::AccountId}-${AWS::Region}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-${CdkQualifier}-file-publishing-role-${AWS::AccountId}-${AWS::Region}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-${CdkQualifier}-lookup-role-${AWS::AccountId}-${AWS::Region}
+
+        # ── The front-end half ───────────────────────────────────────────────
+        # `apps/web/scripts/deploy.sh` reads the API URL, user pool id and
+        # client id from stack outputs, so it needs to read stacks under its
+        # own credentials rather than through a bootstrap role. Read only, and
+        # only the stacks this product owns.
+        - PolicyName: ReadHandoverStackOutputs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/Handover*/*
+
+        # Exactly the eight calls the script makes, no delete among them. The
+        # app id is not known until the app exists, so the resource is
+        # `apps/*` — bounded to this account and this region. ListApps is
+        # separate because it takes no resource.
+        - PolicyName: PublishToAmplifyHosting
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: amplify:ListApps
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - amplify:CreateApp
+                  - amplify:UpdateApp
+                  - amplify:CreateBranch
+                  - amplify:GetBranch
+                  - amplify:CreateDeployment
+                  - amplify:StartDeployment
+                  - amplify:GetJob
+                Resource:
+                  - !Sub arn:${AWS::Partition}:amplify:${AWS::Region}:${AWS::AccountId}:apps/*
+                  - !Sub arn:${AWS::Partition}:amplify:${AWS::Region}:${AWS::AccountId}:apps/*/branches/*
+                  - !Sub arn:${AWS::Partition}:amplify:${AWS::Region}:${AWS::AccountId}:apps/*/branches/*/jobs/*
+
+      Tags:
+        - Key: handover:managed-by
+          Value: cloudformation
+        - Key: handover:purpose
+          Value: github-actions-deploy
+
+Outputs:
+  DeployRoleArn:
+    Description: >-
+      Set this as the AWS_DEPLOY_ROLE_ARN repository secret in GitHub. It is
+      the only value the workflow needs, and the only place the account id
+      lives outside AWS.
+    Value: !GetAtt DeployRole.Arn
