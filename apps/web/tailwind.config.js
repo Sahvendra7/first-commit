@@ -19,7 +19,12 @@ export default {
     extend: {
       colors: {
         paper: { DEFAULT: token('paper'), deep: token('paper-deep') },
-        surface: { DEFAULT: token('surface'), sunk: token('sunk') },
+        surface: token('surface'),
+        // Top level rather than `surface.sunk`: the class then reads `bg-sunk`,
+        // and a nested key would have made it `bg-surface-sunk`, which is both
+        // longer and easy to misspell as the shorter form — which is exactly
+        // what happened, silently, across six components.
+        sunk: token('sunk'),
         line: { DEFAULT: token('line'), strong: token('line-strong') },
         ink: {
           DEFAULT: token('ink'),

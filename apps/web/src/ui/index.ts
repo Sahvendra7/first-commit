@@ -15,6 +15,8 @@ export { Banner } from './Banner.js';
 export type { BannerProps, BannerTone } from './Banner.js';
 export { Card } from './Card.js';
 export type { CardProps } from './Card.js';
+export { DocumentCard } from './DocumentCard.js';
+export type { DocumentCardProps } from './DocumentCard.js';
 export { EmptyState, PairGlyph } from './EmptyState.js';
 export type { EmptyStateProps } from './EmptyState.js';
 export { EvidenceMeta, VerifiedGlyph, formatReceivedAt, shortDigest } from './EvidenceMeta.js';

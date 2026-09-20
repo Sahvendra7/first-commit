@@ -14,12 +14,13 @@ import { firstMatchedPair, missingPairReason, resolveRooms } from '../../lib/pai
 import { toDiffAdditions, type MarkedChange } from '../../lib/marked-change.js';
 import { jobForProgress, useJob } from '../../lib/use-job.js';
 import { effectivePhase } from '../../lib/phase.js';
-import { JourneyStages } from './JourneyStages.js';
+import { PropertyRecord } from './PropertyRecord.js';
 import { CompareSlider } from '../compare/CompareSlider.js';
 import { ChangeMarker } from '../compare/ChangeMarker.js';
 import { ConditionSummary } from '../compare/ConditionSummary.js';
 import { RoomCapture } from '../capture/RoomCapture.js';
 import { Recovery } from '../claim/Recovery.js';
+import { Badge, Banner, Button, EmptyState, PairGlyph, Section } from '../../ui/index.js';
 
 /**
  * One tenancy, end to end: capture -> ingest -> close the phase -> compare ->
@@ -287,67 +288,74 @@ export function TenancyView({
     }
   }, [api, load, marks, room, tenancyId]);
 
-  if (loading) return <p className="text-sm text-slate-600">Loading…</p>;
+  /*
+   * A skeleton in the record's own shape rather than the word "Loading…".
+   * The aggregate is one request, so this is on screen for a moment — but a
+   * moment of the layout appearing is a moment of the layout not jumping.
+   */
+  if (loading) {
+    return (
+      <div className="space-y-6" data-testid="record-loading" aria-busy="true">
+        <span className="sr-only">Loading this record…</span>
+        <div className="h-48 animate-pulse rounded-3xl bg-paper-deep" />
+        <div className="h-24 animate-pulse rounded-2xl bg-paper-deep" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="h-64 animate-pulse rounded-2xl bg-paper-deep" />
+          <div className="h-64 animate-pulse rounded-2xl bg-paper-deep" />
+        </div>
+      </div>
+    );
+  }
 
   if (error?.requiresSignIn) {
     return (
-      <div className="space-y-3">
-        <p role="alert" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Your session has expired. Sign in again to continue.
-        </p>
-        <button
-          type="button"
-          onClick={onSignOut}
-          className="w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-        >
+      <div className="mx-auto max-w-measure space-y-4">
+        <Banner role="alert" tone="warn" title="Your session has expired">
+          Sign in again to continue. Nothing in your record has changed.
+        </Banner>
+        <Button block size="lg" onClick={onSignOut}>
           Sign in again
-        </button>
+        </Button>
       </div>
     );
   }
 
   if (!tenancy) {
     return (
-      <div className="space-y-3">
-        <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">{error?.title ?? 'Could not load this tenancy'}</strong>
+      <div className="mx-auto max-w-measure space-y-4">
+        <Banner role="alert" tone="danger" title={error?.title ?? 'Could not load this record'}>
           {error?.detail}
-        </p>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800"
-        >
+        </Banner>
+        <Button block size="lg" tone="secondary" onClick={() => void load()}>
           Try again
-        </button>
+        </Button>
       </div>
     );
   }
 
   const banners = (
-    <>
+    <div className="space-y-2.5 empty:hidden">
       {error && !error.requiresSignIn ? (
-        <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">{error.title}</strong>
+        <Banner role="alert" tone="danger" title={error.title}>
           {error.detail}
-        </p>
+        </Banner>
       ) : null}
       {notice ? (
-        <p role="status" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+        <Banner role="status" tone="info">
           {notice}
-        </p>
+        </Banner>
       ) : null}
       {capture.kind === 'INGESTING' ? (
-        <p role="status" data-testid="ingesting" className="rounded bg-sky-50 px-3 py-2 text-sm text-sky-900">
+        <Banner role="status" tone="brand" data-testid="ingesting">
           Recording photographs… {capture.ingested} of {capture.expected} hashed and
           timestamped.
-        </p>
+        </Banner>
       ) : null}
       {capture.kind === 'INGEST_TIMEOUT' ? (
-        <p role="status" data-testid="ingest-timeout" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <Banner role="status" tone="warn" data-testid="ingest-timeout">
           {capture.ingested} of {capture.expected} photographs are recorded so far. The rest
           may still be processing — nothing has been lost. Refresh in a moment.
-        </p>
+        </Banner>
       ) : null}
 
       {/*
@@ -357,37 +365,42 @@ export function TenancyView({
         of this started.
       */}
       {reportJob.kind === 'FAILED' ? (
-        <div role="alert" data-testid="job-failed" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">The document could not be generated</strong>
+        <Banner
+          role="alert"
+          tone="danger"
+          title="The document could not be generated"
+          data-testid="job-failed"
+        >
           Your photographs and their timestamps are unaffected. You can try again.
-        </div>
+        </Banner>
       ) : null}
       {reportJob.kind === 'STALLED' ? (
-        <div role="status" data-testid="job-stalled" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <strong className="block">This is taking longer than usual</strong>
+        <Banner
+          role="status"
+          tone="warn"
+          title="This is taking longer than usual"
+          data-testid="job-stalled"
+          action={
+            <Button tone="quiet" size="sm" onClick={refreshReportJob} className="-ml-3">
+              Check again
+            </Button>
+          }
+        >
           The document is still being prepared. Nothing has been lost.
-          <button
-            type="button"
-            onClick={refreshReportJob}
-            className="mt-1 block min-h-11 font-semibold underline"
-          >
-            Check again
-          </button>
-        </div>
+        </Banner>
       ) : null}
       {reportJob.kind === 'UNAVAILABLE' ? (
-        <p role="status" data-testid="job-unavailable" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
+        <Banner role="status" tone="info" data-testid="job-unavailable">
           Your photographs have been submitted. This deployment cannot report the
           document&rsquo;s progress, so refresh in a moment to see it.
-        </p>
+        </Banner>
       ) : null}
       {reportJob.kind === 'ERROR' ? (
-        <p role="alert" data-testid="job-error" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          <strong className="block">{reportJob.error.title}</strong>
+        <Banner role="alert" tone="danger" title={reportJob.error.title} data-testid="job-error">
           {reportJob.error.detail}
-        </p>
+        </Banner>
       ) : null}
-    </>
+    </div>
   );
 
   if (room) {
@@ -401,93 +414,138 @@ export function TenancyView({
     // one, so the box lands on the image the slider just showed.
     const annotationPhoto = pair?.after ?? room.after[0];
     return (
-      <div className="space-y-4">
-        <button
-          type="button"
-          onClick={() => {
-            setRoomId(undefined);
-            setMarks([]);
-          }}
-          className="text-sm font-medium text-sky-700 underline"
-        >
-          ← All rooms
-        </button>
-        <h1 className="text-lg font-semibold text-slate-900">{room.roomLabel}</h1>
+      <div className="enter space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            tone="quiet"
+            size="sm"
+            className="-ml-3"
+            onClick={() => {
+              setRoomId(undefined);
+              setMarks([]);
+            }}
+          >
+            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden="true">
+              <path
+                d="M13 8H4m0 0 3.5-3.5M4 8l3.5 3.5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            All rooms
+          </Button>
+          <Badge tone="neutral">{phase === 'MOVEIN' ? 'Move-in' : 'Move-out'}</Badge>
+        </div>
+
+        <div>
+          <p className="text-micro font-semibold uppercase text-ink-3">Room</p>
+          <h1 className="mt-1 font-display text-title text-ink">{room.roomLabel}</h1>
+        </div>
+
         {banners}
 
-        {pair ? (
-          <CompareSlider
-            before={{
-              url: pair.before.url,
-              alt: `${room.roomLabel} at move-in, view ${pair.pairIndex + 1}`,
-              receivedAt: pair.before.receivedAt,
-              sha256: pair.before.sha256,
+        {/*
+          The comparison is the hero of this screen, so it gets the full
+          measure and everything else sits under it. On a wide display the
+          photographs are the thing that benefits from the width — a form does
+          not.
+        */}
+        <Section
+          headingLevel={2}
+          headingId="room-compare-heading"
+          eyebrow="Before and after"
+          title="Compare the two records"
+          lead="Drag the divider, or use the arrow keys. Each photograph carries the time the server received it and its integrity hash."
+          /*
+            Capped rather than full-bleed. The frame is a 4:3 box, so at the
+            shell's full 72rem it is over 850px tall and the tenant has to
+            scroll past one photograph to reach the controls under it.
+          */
+          className="max-w-4xl"
+        >
+          {pair ? (
+            <CompareSlider
+              before={{
+                url: pair.before.url,
+                alt: `${room.roomLabel} at move-in, view ${pair.pairIndex + 1}`,
+                receivedAt: pair.before.receivedAt,
+                sha256: pair.before.sha256,
+              }}
+              after={{
+                url: pair.after.url,
+                alt: `${room.roomLabel} at move-out, view ${pair.pairIndex + 1}`,
+                receivedAt: pair.after.receivedAt,
+                sha256: pair.after.sha256,
+              }}
+              overlays={marks
+                .filter((m) => m.box)
+                .map((m) => ({ id: m.id, box: m.box!, label: m.description }))}
+              // Presigned GETs expire in five minutes; re-fetch rather than
+              // leaving a broken image on screen.
+              onImageError={() => void load()}
+            />
+          ) : (
+            <EmptyState
+              data-testid="missing-pair"
+              icon={<PairGlyph />}
+              title="Nothing to compare yet"
+            >
+              {noPair === 'NO_PHOTOS'
+                ? 'No photographs have been recorded for this room yet.'
+                : noPair === 'NO_AFTER'
+                  ? 'This room has move-in photographs but no move-out photographs yet, so there is nothing to compare.'
+                  : noPair === 'NO_BEFORE'
+                    ? 'This room has move-out photographs but no move-in photographs, so there is nothing to compare.'
+                    : 'The move-in and move-out photographs for this room do not line up as matching views yet, so there is no like-for-like comparison to show.'}
+            </EmptyState>
+          )}
+        </Section>
+
+        <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
+          <RoomCapture
+            api={api}
+            tenancyId={tenancyId}
+            roomId={room.roomId}
+            roomLabel={room.roomLabel}
+            phase={phase}
+            serverPhotoCount={countFor(tenancy, room.roomId, phase)}
+            onUploaded={(sent) => {
+              if (sent > 0) void confirmIngest(room.roomId, sent);
             }}
-            after={{
-              url: pair.after.url,
-              alt: `${room.roomLabel} at move-out, view ${pair.pairIndex + 1}`,
-              receivedAt: pair.after.receivedAt,
-              sha256: pair.after.sha256,
-            }}
-            overlays={marks
-              .filter((m) => m.box)
-              .map((m) => ({ id: m.id, box: m.box!, label: m.description }))}
-            // Presigned GETs expire in five minutes; re-fetch rather than
-            // leaving a broken image on screen.
-            onImageError={() => void load()}
           />
-        ) : (
-          <p
-            data-testid="missing-pair"
-            className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-600"
-          >
-            {noPair === 'NO_PHOTOS'
-              ? 'No photographs recorded for this room yet.'
-              : noPair === 'NO_AFTER'
-                ? 'This room has move-in photographs but no move-out photographs yet, so there is nothing to compare.'
-                : noPair === 'NO_BEFORE'
-                  ? 'This room has move-out photographs but no move-in photographs, so there is nothing to compare.'
-                  : 'The move-in and move-out photographs for this room do not line up as matching views yet, so there is no like-for-like comparison to show.'}
-          </p>
-        )}
 
-        <RoomCapture
-          api={api}
-          tenancyId={tenancyId}
-          roomId={room.roomId}
-          roomLabel={room.roomLabel}
-          phase={phase}
-          serverPhotoCount={countFor(tenancy, room.roomId, phase)}
-          onUploaded={(sent) => {
-            if (sent > 0) void confirmIngest(room.roomId, sent);
-          }}
-        />
+          {annotationPhoto ? (
+            <Section
+              headingLevel={2}
+              headingId="room-mark-heading"
+              eyebrow="Your record"
+              title="Mark what changed"
+              lead="Drag a box around anything that is different, then describe it. A change described in words is a complete change — drawing is optional."
+            >
+              <ChangeMarker
+                imageUrl={annotationPhoto.url}
+                imageAlt={`${room.roomLabel} at move-out`}
+                marks={marks}
+                onMarksChange={setMarks}
+              />
 
-        {annotationPhoto ? (
-          <ChangeMarker
-            imageUrl={annotationPhoto.url}
-            imageAlt={`${room.roomLabel} at move-out`}
-            marks={marks}
-            onMarksChange={setMarks}
-          />
-        ) : null}
-
-        {marks.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => void saveMarks()}
-            className="w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-          >
-            Save {marks.length === 1 ? '1 change' : `${marks.length} changes`}
-          </button>
-        ) : null}
+              {marks.length > 0 ? (
+                <Button block size="lg" className="mt-4" onClick={() => void saveMarks()}>
+                  Save {marks.length === 1 ? '1 change' : `${marks.length} changes`}
+                </Button>
+              ) : null}
+            </Section>
+          ) : null}
+        </div>
       </div>
     );
   }
 
   if (recoveryOpen) {
     return (
-      <div className="space-y-3">
+      <div className="enter space-y-4">
         {banners}
         <Recovery
           api={api}
@@ -500,17 +558,51 @@ export function TenancyView({
   }
 
   return (
-    <div className="space-y-3">
-      <JourneyStages status={tenancy.tenancy.status} />
+    <div className="enter space-y-6">
+      <PropertyRecord tenancy={tenancy} />
+
       {banners}
+
       {roomsSource === 'aggregate' && diff ? (
-        <p className="rounded border border-slate-200 px-3 py-2 text-xs text-slate-600" data-testid="no-diff-note">
-          No room-by-room comparison has been computed for this tenancy. The photographs
-          below are paired from the evidence record itself.
-        </p>
+        <Banner role="status" tone="info" data-testid="no-diff-note">
+          No room-by-room comparison has been computed for this record. The photographs
+          below are paired from the evidence itself.
+        </Banner>
+      ) : null}
+
+      {/*
+        Offered from `MOVEOUT_COMPLETE` rather than from `AWAITING_REFUND`, which
+        is where §7 actually permits a claim. The gap is deliberate: between
+        those two states the recovery screen explains *why* a letter cannot be
+        prepared yet, and a tenant who has just finished move-out is exactly the
+        person who wants to know what happens next. The screen itself refuses;
+        this card only opens it.
+      */}
+      {recoveryOffered ? (
+        <div className="flex flex-col gap-4 rounded-2xl border border-brand-line bg-brand-tint p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div className="min-w-0">
+            <p className="text-micro font-semibold uppercase text-brand">Next</p>
+            <h2 className="mt-1 font-display text-[1.375rem] leading-tight tracking-[-0.015em] text-ink">
+              Recover your deposit
+            </h2>
+            <p className="mt-1.5 max-w-measure text-sm text-ink-2">
+              Your move-out record is closed. Enter what the landlord withheld and Handover
+              prepares a dated demand letter from the evidence on file.
+            </p>
+          </div>
+          <Button
+            size="lg"
+            className="shrink-0"
+            onClick={() => setRecoveryOpen(true)}
+            data-testid="open-recovery"
+          >
+            Start recovery
+          </Button>
+        </div>
       ) : null}
 
       <ConditionSummary
+        showHeader={false}
         tenancy={tenancy.tenancy}
         rooms={rooms}
         phase={phase}
@@ -529,25 +621,6 @@ export function TenancyView({
         {...(jobForProgress(reportJob) ? { job: jobForProgress(reportJob)! } : {})}
         busy={capture.kind === 'CLOSING' || reportJob.kind === 'POLLING'}
       />
-
-      {/*
-        Offered from `MOVEOUT_COMPLETE` rather than from `AWAITING_REFUND`, which
-        is where §7 actually permits a claim. The gap is deliberate: between
-        those two states the recovery screen explains *why* a letter cannot be
-        prepared yet, and a tenant who has just finished move-out is exactly the
-        person who wants to know what happens next. The screen itself refuses;
-        this button only opens it.
-      */}
-      {recoveryOffered ? (
-        <button
-          type="button"
-          onClick={() => setRecoveryOpen(true)}
-          data-testid="open-recovery"
-          className="min-h-11 w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800"
-        >
-          Recover your deposit
-        </button>
-      ) : null}
     </div>
   );
 }

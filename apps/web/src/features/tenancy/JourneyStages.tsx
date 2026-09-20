@@ -4,11 +4,27 @@
  * Presentation only: it derives everything from the tenancy status it is given
  * and holds no state of its own, so it cannot disagree with the record. The
  * status list it maps is `TENANCY_STATUSES` in `packages/shared` (§6.2).
+ *
+ * The drawing is `ui/Stepper`; what stays here is the one thing that is
+ * domain knowledge rather than presentation — which status belongs to which
+ * stage.
  */
 import type { TenancyStatus } from '@handover/shared';
+import { Stepper, type Step } from '../../ui/index.js';
 
-/** The stages, in the order a tenancy passes through them. */
-const STAGES = ['Move-in', 'Condition', 'Move-out', 'Recovery'] as const;
+/**
+ * The stages, in the order a tenancy passes through them.
+ *
+ * The ids are the lowercased labels because that is what the tests address
+ * them by, and because an id that is derivable from the label cannot drift
+ * from it.
+ */
+const STAGES: readonly Step[] = [
+  { id: 'move-in', label: 'Move-in' },
+  { id: 'condition', label: 'Condition' },
+  { id: 'move-out', label: 'Move-out' },
+  { id: 'recovery', label: 'Recovery' },
+];
 
 type StageIndex = 0 | 1 | 2 | 3;
 
@@ -26,39 +42,24 @@ function stageFor(status: TenancyStatus): StageIndex {
     case 'MOVEOUT_COMPLETE':
       return 2;
     default:
-      // AWAITING_REFUND, OVERDUE, CLOSED — the deposit-recovery end of the path.
+      // AWAITING_REFUND, OVERDUE, RESOLVED — the deposit-recovery end of the path.
       return 3;
   }
 }
 
-export function JourneyStages({ status }: { readonly status: TenancyStatus }) {
-  const current = stageFor(status);
+export function JourneyStages({
+  status,
+  className,
+}: {
+  readonly status: TenancyStatus;
+  readonly className?: string;
+}) {
   return (
-    <nav aria-label="Progress" data-testid="journey-stages" className="mb-4">
-      <ol className="flex items-stretch gap-1">
-        {STAGES.map((label, i) => {
-          const done = i < current;
-          const active = i === current;
-          return (
-            <li key={label} className="min-w-0 flex-1">
-              <div
-                data-testid={`stage-${label.toLowerCase()}`}
-                aria-current={active ? 'step' : undefined}
-                className={[
-                  'rounded px-1 py-1.5 text-center text-xs font-medium',
-                  active
-                    ? 'bg-slate-900 text-white'
-                    : done
-                      ? 'bg-slate-200 text-slate-700'
-                      : 'bg-slate-100 text-slate-400',
-                ].join(' ')}
-              >
-                <span className="block truncate">{label}</span>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
+    <Stepper
+      steps={STAGES}
+      currentIndex={stageFor(status)}
+      data-testid="journey-stages"
+      {...(className ? { className } : {})}
+    />
   );
 }
