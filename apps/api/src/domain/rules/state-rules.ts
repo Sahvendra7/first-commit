@@ -85,6 +85,29 @@ export function addDays(date: IsoDate, days: number): IsoDate {
 }
 
 /**
+ * Whole days from `from` to `to`, in UTC. Negative when `to` precedes `from`.
+ *
+ * Shares `addDays`' UTC discipline and for the same reason: this number is
+ * multiplied into a statutory interest figure that is printed in a demand
+ * letter, so it must be identical on a laptop in Europe and a Lambda in
+ * ap-south-1. Both dates are validated, so a malformed one throws here rather
+ * than becoming a `NaN` that propagates into money.
+ *
+ * Calendar days, not elapsed time: both endpoints are dates, there is no clock
+ * involved, and no DST transition can move a UTC midnight.
+ */
+export function daysBetween(from: IsoDate, to: IsoDate): number {
+  const at = (date: IsoDate): number => {
+    // `addDays(date, 0)` is the cheapest way to reuse the validation above —
+    // the format check, the real-calendar-date check and the UTC parse.
+    const normalised = addDays(date, 0);
+    const [y, m, d] = normalised.split('-').map(Number) as [number, number, number];
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((at(to) - at(from)) / 86_400_000);
+}
+
+/**
  * The refund deadline: handover plus the state's refund window.
  *
  * The window comes from the rule item, never from a constant here — one entry
