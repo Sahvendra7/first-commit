@@ -13,7 +13,11 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import {
+  CLOCK_PENDING_PK,
   GSI1_NAME,
+  GSI2_NAME,
+  KEY_PREFIX,
+  KEY_SEP,
   diffCachePk,
   diffCacheSk,
   diffSkPrefix,
@@ -738,6 +742,152 @@ export async function setJobProgress(jobId: string, progressDone: number): Promi
     // A job that vanished mid-run is the terminal write's problem to report,
     // not the progress bar's.
     if (isConditionalFailure(err)) return;
+    throw err;
+  }
+}
+
+/* ── AP-5: the sparse clock ────────────────────────────────────────────────── */
+
+/**
+ * Tenancy ids whose refund deadline is on or before `onOrBefore`.
+ *
+ * **A Query on GSI2, never a Scan.** §5.7 is explicit — "queries by index,
+ * never scans" — and the index is `KEYS_ONLY` and sparse, so this reads only
+ * the tenancies actually at risk. A Scan would read every row in the table
+ * every morning and would grow with the business rather than with the problem.
+ *
+ * Paginated, because the result set is unbounded in principle: a backlog that
+ * built up while the sweep was broken must not be silently truncated at one
+ * page and left half-swept.
+ *
+ * Returns ids only. `KEYS_ONLY` projects nothing else, and the sweeper reads
+ * each tenancy from the base table anyway — there is no point paying to
+ * project every attribute of every pending tenancy into an index whose whole
+ * job is to produce a list.
+ */
+export async function queryRefundsDueBy(onOrBefore: string): Promise<string[]> {
+  const ids: string[] = [];
+  let startKey: Record<string, unknown> | undefined;
+
+  do {
+    const page = await documentClient().send(
+      new QueryCommand({
+        TableName: config.tableName(),
+        IndexName: GSI2_NAME,
+        KeyConditionExpression: '#pk = :pk AND #sk <= :due',
+        ExpressionAttributeNames: { '#pk': 'GSI2PK', '#sk': 'GSI2SK' },
+        ExpressionAttributeValues: { ':pk': CLOCK_PENDING_PK, ':due': onOrBefore },
+        ExclusiveStartKey: startKey,
+      }),
+    );
+
+    for (const item of (page.Items ?? []) as Array<{ PK?: string }>) {
+      // `KEYS_ONLY` gives back the base-table key; the id is its suffix.
+      const pk = item.PK ?? '';
+      const id = pk.startsWith(`${KEY_PREFIX.TENANCY}${KEY_SEP}`)
+        ? pk.slice(KEY_PREFIX.TENANCY.length + KEY_SEP.length)
+        : '';
+      if (id) ids.push(id);
+    }
+    startKey = page.LastEvaluatedKey;
+  } while (startKey);
+
+  return ids;
+}
+
+/**
+ * Mark a tenancy overdue and take it off the sweep, in one conditional write.
+ *
+ * Conditional on the tenancy still being `AWAITING_REFUND`, so a sweep racing
+ * a tenant who has just resolved the matter loses cleanly rather than dragging
+ * a settled tenancy into `OVERDUE`. A lost race is a no-op, not a throw.
+ *
+ * The `REMOVE` is not optional. `OVERDUE` is not clock-tracked, so leaving the
+ * keys would put this tenancy on every future sweep forever and defeat the
+ * point of a sparse index (§6.2).
+ */
+export async function markTenancyOverdue(
+  tenancyId: string,
+  status: TenancyStatus,
+  lastNotifiedAt: string,
+): Promise<boolean> {
+  try {
+    await documentClient().send(
+      new UpdateCommand({
+        TableName: config.tableName(),
+        Key: key.tenancyMeta(tenancyId),
+        UpdateExpression:
+          'SET #status = :status, #updatedAt = :now, #lastNotifiedAt = :now REMOVE #g2pk, #g2sk',
+        ConditionExpression: '#status = :awaiting',
+        ExpressionAttributeNames: {
+          '#status': 'status',
+          '#updatedAt': 'updatedAt',
+          '#lastNotifiedAt': 'lastNotifiedAt',
+          '#g2pk': 'GSI2PK',
+          '#g2sk': 'GSI2SK',
+        },
+        ExpressionAttributeValues: {
+          ':status': status,
+          ':now': lastNotifiedAt,
+          ':awaiting': 'AWAITING_REFUND' satisfies TenancyStatus,
+        },
+      }),
+    );
+    return true;
+  } catch (err) {
+    if (isConditionalFailure(err)) return false;
+    throw err;
+  }
+}
+
+/**
+ * Start the refund clock: record the handover date and the deadline, and write
+ * the sparse GSI2 keys, conditional on the move-out phase being closed.
+ */
+export async function beginRefundWatchOn(
+  tenancyId: string,
+  watch: {
+    readonly status: TenancyStatus;
+    readonly handoverDate: string;
+    readonly refundDueDate: string;
+    readonly clockKeys: ClockKeys;
+  },
+  updatedAt: string,
+): Promise<boolean> {
+  try {
+    await documentClient().send(
+      new UpdateCommand({
+        TableName: config.tableName(),
+        Key: key.tenancyMeta(tenancyId),
+        UpdateExpression:
+          'SET #status = :status, #updatedAt = :now, #handoverDate = :handover, ' +
+          '#refundDueDate = :due, #g2pk = :g2pk, #g2sk = :g2sk',
+        ConditionExpression: '#status = :expected',
+        ExpressionAttributeNames: {
+          '#status': 'status',
+          '#updatedAt': 'updatedAt',
+          '#handoverDate': 'handoverDate',
+          '#refundDueDate': 'refundDueDate',
+          '#g2pk': 'GSI2PK',
+          '#g2sk': 'GSI2SK',
+        },
+        ExpressionAttributeValues: {
+          ':status': watch.status,
+          ':now': updatedAt,
+          ':handover': watch.handoverDate,
+          ':due': watch.refundDueDate,
+          ':g2pk': watch.clockKeys.GSI2PK,
+          ':g2sk': watch.clockKeys.GSI2SK,
+          ':expected': 'MOVEOUT_COMPLETE' satisfies TenancyStatus,
+        },
+      }),
+    );
+    return true;
+  } catch (err) {
+    // Already started, or the tenancy moved on. Either way the clock is not
+    // this call's to set, and re-running phase completion must not reset a
+    // deadline that is already running.
+    if (isConditionalFailure(err)) return false;
     throw err;
   }
 }

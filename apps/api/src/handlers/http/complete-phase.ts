@@ -17,9 +17,11 @@ import {
 } from '@handover/shared';
 import type { JobItem, JobType, Phase } from '@handover/shared';
 import {
+  beginRefundWatchOn,
   getJob,
   getPhotosForPhase,
   getRooms,
+  getStateRule,
   getTenancy,
   putJob,
   updateTenancyStatus,
@@ -29,6 +31,8 @@ import { invokeWorker } from '../../adapters/lambda/dispatch.js';
 import { awaitIngestReconciled, phaseAlreadyComplete } from '../../domain/evidence/reconcile.js';
 import { InvalidTransitionError, clockKeysFor, nextStatusOnPhaseComplete } from '../../domain/tenancy/state-machine.js';
 import { NotOwnerError, assertOwnership } from '../../domain/tenancy/ownership.js';
+import { beginRefundWatch } from '../../domain/tenancy/refund-clock.js';
+import { resolveStateRule } from '../../domain/rules/state-rules.js';
 import { HttpError, callerSub, ok, parse, parseBody, withErrors } from './http.js';
 import type { ApiEvent, ApiResult } from './http.js';
 
@@ -224,7 +228,55 @@ export const handler = withErrors(async (event: ApiEvent): Promise<ApiResult> =>
   // reused as the retry path. Dispatching *first* would risk a worker reading
   // a job that is not there yet, and throwing on a failed dispatch would
   // return 500 for a phase that is already closed, which no retry can undo.
+  // Closing MOVEOUT is the moment possession came back, so it is the moment
+  // the refund clock starts (§6.2 AP-5, §8.3). Done here rather than from the
+  // document worker on purpose: the clock must not depend on a PDF rendering.
+  // A tenant whose Exit Report failed still has a deadline, and it is still
+  // the deadline the statute gives them.
+  if (phase === 'MOVEOUT') {
+    await startRefundWatch(id, tenancy.stateCode, now);
+  }
+
   await dispatch(JOB_FOR_PHASE[phase], id, jobId);
 
   return ok(completePhaseResponseSchema.parse({ jobId, status: 'QUEUED' }), 202);
 });
+
+/**
+ * Put the tenancy on the daily sweep.
+ *
+ * Never allowed to fail the request, and deliberately so: the phase is closed
+ * and the evidence is recorded by the time this runs, so throwing here would
+ * return a 500 for work that already succeeded and that no retry can undo.
+ * A tenancy left in `MOVEOUT_COMPLETE` is recoverable — re-completing the
+ * phase runs this again, and the write is conditional so it cannot double-set
+ * or move a deadline that is already running.
+ *
+ * An unknown state is a refusal rather than a default: falling back to another
+ * state's refund window would put a wrong statutory deadline on the record,
+ * which is exactly the R9 failure the review date exists to surface.
+ */
+async function startRefundWatch(
+  tenancyId: string,
+  stateCode: string,
+  now: string,
+): Promise<void> {
+  try {
+    const rule = resolveStateRule(await getStateRule(stateCode), stateCode);
+    const watch = beginRefundWatch('MOVEOUT_COMPLETE', now.slice(0, 10), rule);
+
+    const started = await beginRefundWatchOn(tenancyId, watch, now);
+    console.info('refund_watch', {
+      tenancyId,
+      started,
+      refundDueDate: watch.refundDueDate,
+      refundWindowDays: rule.refundWindowDays,
+    });
+  } catch (err) {
+    console.error('refund_watch_not_started', {
+      tenancyId,
+      stateCode,
+      error: (err as Error)?.name ?? 'unknown',
+    });
+  }
+}
