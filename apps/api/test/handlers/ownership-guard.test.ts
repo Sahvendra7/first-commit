@@ -1,0 +1,152 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * §10.2: "The ownership check is the entire authorization model and is
+ * therefore unit-tested with an explicit 'every route calls the guard'
+ * assertion."
+ *
+ * This is that assertion. It is a source-level check rather than a behavioural
+ * one on purpose: a behavioural test can only cover the routes someone
+ * remembered to write a test for, and the failure being defended against is
+ * precisely the route nobody remembered. A new file in `handlers/http/` that
+ * forgets `assertOwnership` fails this test the moment it is added.
+ *
+ * §10.1's first threat is cross-tenant data access. There are no roles to get
+ * wrong here — there is only this one call, present or absent.
+ */
+
+const HTTP_DIR = join(import.meta.dirname, '../../src/handlers/http');
+
+/**
+ * `http.ts` is plumbing, not a route. `create-tenancy.ts` creates the tenancy
+ * that ownership is later asserted against, so it has nothing to assert
+ * against yet — it sets `ownerSub` from the verified token instead, which this
+ * test checks separately below.
+ */
+const NOT_ROUTES = new Set(['http.ts']);
+const CREATES_OWNERSHIP = new Set(['create-tenancy.ts']);
+
+/**
+ * §5.2: "all routes under `/v1`, JWT-authorized except
+ * `GET /v1/state-rules/{code}` and health." A public route has no caller and
+ * no tenancy, so it has nothing to assert ownership against.
+ *
+ * This set is the dangerous one in this file — an entry here switches off the
+ * entire authorization model for a route. It is deliberately spelled as an
+ * explicit allowlist of one, and the block at the bottom of this file proves
+ * that anything in it reads no tenancy data, so adding a route here cannot
+ * quietly expose a tenancy.
+ */
+const PUBLIC_ROUTES = new Set(['get-state-rules.ts']);
+
+const routeFiles = (): string[] =>
+  readdirSync(HTTP_DIR)
+    .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+    .filter((f) => !NOT_ROUTES.has(f));
+
+/** Every route that is behind the JWT authorizer — i.e. all but the public one. */
+const authenticatedRouteFiles = (): string[] =>
+  routeFiles().filter((f) => !PUBLIC_ROUTES.has(f));
+
+const source = (file: string): string => readFileSync(join(HTTP_DIR, file), 'utf8');
+
+describe('every route calls the ownership guard (§10.2)', () => {
+  it('finds the route files at all, so an empty glob cannot pass vacuously', () => {
+    const routes = routeFiles();
+    expect(routes.length).toBeGreaterThanOrEqual(4);
+    expect(routes).toContain('presign-photos.ts');
+    expect(routes).toContain('complete-phase.ts');
+    expect(routes).toContain('get-tenancy.ts');
+    expect(routes).toContain('get-diff.ts');
+  });
+
+  it.each(authenticatedRouteFiles().filter((f) => !CREATES_OWNERSHIP.has(f)))(
+    '%s calls assertOwnership',
+    (file) => {
+      expect(source(file)).toContain('assertOwnership(');
+    },
+  );
+
+  it.each(authenticatedRouteFiles())(
+    '%s takes the caller from verified JWT claims',
+    (file) => {
+      expect(source(file)).toContain('callerSub(event)');
+    },
+  );
+
+  /**
+   * §7 and §10.1: no endpoint accepts an owner id from the client. A handler
+   * that reads `ownerSub` out of a body or a query string would defeat the
+   * guard while still calling it.
+   */
+  it.each(routeFiles())('%s never reads an owner id from the request', (file) => {
+    const text = source(file);
+    expect(text).not.toMatch(/body\s*\.\s*ownerSub/);
+    expect(text).not.toMatch(/queryStringParameters\s*(\?\.|\[)\s*['"]?ownerSub/);
+    expect(text).not.toMatch(/headers\s*(\?\.|\[)\s*['"]?x-owner/i);
+  });
+
+  it('create-tenancy sets ownerSub from the token, not from the body', () => {
+    const text = source('create-tenancy.ts');
+    expect(text).toContain('ownerSub: sub');
+    expect(text).toContain('callerSub(event)');
+  });
+});
+
+/**
+ * The public route is the one place the authorization model is switched off,
+ * so it gets its own assertions rather than a silent exemption.
+ */
+describe('the public route reads no tenancy data (§5.2, §10.1)', () => {
+  it('is exactly the state-rules route and nothing else', () => {
+    expect([...PUBLIC_ROUTES]).toEqual(['get-state-rules.ts']);
+  });
+
+  it.each([...PUBLIC_ROUTES])('%s exists', (file) => {
+    expect(routeFiles()).toContain(file);
+  });
+
+  /**
+   * A public handler that could reach a tenancy partition would be a
+   * cross-tenant read with no caller to check it against. `getStateRule` is
+   * the only store function it is allowed to touch.
+   */
+  it.each([...PUBLIC_ROUTES])('%s reaches no tenancy-scoped store function', (file) => {
+    const text = source(file);
+    for (const forbidden of [
+      'getTenancyPartition',
+      'getTenancy(',
+      'getRooms',
+      'getPhotosForPhase',
+      'getJob',
+      'getDiffs',
+      'listTenanciesForUser',
+      'signEvidenceGet',
+    ]) {
+      expect(text).not.toContain(forbidden);
+    }
+  });
+
+  it.each([...PUBLIC_ROUTES])('%s does not pretend to have a caller', (file) => {
+    expect(source(file)).not.toContain('callerSub(');
+  });
+});
+
+describe('callerSub is the only source of a caller identity', () => {
+  it('is the single place that reads a JWT claim', () => {
+    /**
+     * Matches the *access* — `.authorizer`, `['authorizer']` — rather than the
+     * bare word, so a handler that merely mentions the authorizer in a comment
+     * is not a false positive while one that actually reaches into the claim
+     * still is. Tightening this from a substring search was the point: the
+     * thing being defended against is a second reader of JWT claims, not a
+     * second use of the noun.
+     */
+    const readers = readdirSync(HTTP_DIR)
+      .filter((f) => f.endsWith('.ts'))
+      .filter((f) => /\.authorizer\b|\[['"]authorizer['"]\]/.test(source(f)));
+    expect(readers).toEqual(['http.ts']);
+  });
+});

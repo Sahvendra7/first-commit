@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img">
+  <rect width="1200" height="900" fill="#e9e4dc"/>
+  <rect y="702" width="1200" height="198" fill="#b99a72"/>
+  <rect x="96" y="162" width="240" height="378" fill="#cfd8e3" stroke="#8b9bb0" stroke-width="3"/>
+  <rect x="840" y="468" width="144" height="234" fill="#8d6e52"/>
+  
+  <text x="600" y="81" font-family="system-ui, sans-serif" font-size="45" fill="#5b6472" text-anchor="middle">Living Room — Move-in — pair 0</text>
+  <text x="600" y="859.5" font-family="system-ui, sans-serif" font-size="34" fill="#7a2e2e" text-anchor="middle" font-weight="600">PLACEHOLDER — NOT A REAL PHOTOGRAPH</text>
+</svg>

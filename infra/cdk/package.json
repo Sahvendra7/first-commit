@@ -2,6 +2,7 @@
   "name": "@handover/cdk",
   "private": true,
   "version": "0.0.0",
+  "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
@@ -10,12 +11,14 @@
     "deploy": "cdk deploy --all"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.173.2",
     "constructs": "^10.4.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "aws-cdk": "^2.173.1",
+    "aws-cdk-lib": "^2.270.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^3.2.4"
   }

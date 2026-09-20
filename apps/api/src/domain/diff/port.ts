@@ -64,7 +64,21 @@ export interface RoomDiffFailure {
 }
 
 export type RoomDiffOutcome =
-  | { readonly ok: true; readonly value: MergedRoomDiff }
+  | {
+      readonly ok: true;
+      readonly value: MergedRoomDiff;
+      /**
+       * Which model actually produced this, as an opaque provenance string.
+       *
+       * §9.3 requires `modelId` on every DIFF record, so it has to leave the
+       * adapter somehow. Note the direction: a model id is never an *input*
+       * here — the request says nothing about which model to use, and the
+       * adapter resolves that from SSM — it is a fact reported back about what
+       * happened. The domain stores and displays it and never branches on it,
+       * so swapping Converse in still touches no domain code (§9.1).
+       */
+      readonly modelId: string;
+    }
   | { readonly ok: false; readonly failure: RoomDiffFailure };
 
 /**

@@ -340,5 +340,12 @@ export const getStateRulesResponseSchema = z.object({
   authorityName: z.string().min(1),
   escalationSteps: z.array(escalationStepSchema),
   statuteRefs: z.array(statuteRefSchema),
+  /**
+   * Date this state's rules were last human-reviewed (R9). Surfaced in the UI
+   * next to any deadline derived from them, so a stale table is visible rather
+   * than silent. Optional: a rules file written before the field existed still
+   * validates, and the UI omits the line rather than showing a wrong date.
+   */
+  lastReviewedAt: isoDateSchema.optional(),
 });
 export type GetStateRulesResponse = z.infer<typeof getStateRulesResponseSchema>;

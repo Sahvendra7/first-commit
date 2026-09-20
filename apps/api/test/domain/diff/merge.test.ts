@@ -158,6 +158,48 @@ describe('mergeSelfConsistent — confidence discipline', () => {
     expect(carried?.trusted).toBe(false);
   });
 
+  it('carries one run\'s own confidence for the wire, never an aggregate of them', () => {
+    // The frozen `diffChangeSchema.confidence` is required and is documented
+    // as model-reported, so something has to fill it. `representativeConfidence`
+    // is the representative run's own number — a selection, not arithmetic —
+    // and it must be one of the reported values rather than any function of
+    // them.
+    const merged = mergeSelfConsistent([
+      run(stain(0.9, 'A dark stain on the floor near the doorway.')),
+      run(stain(0.1, 'Dark staining on the floor by the doorway.')),
+      run(stain(0.5, 'A stain near the doorway on the floor.')),
+      run(),
+      run(),
+    ]);
+    const only = merged.changes[0];
+    expect(only?.untrustedModelConfidence.reported).toContain(only?.representativeConfidence);
+    // Explicitly not the mean (0.5 happens to be a reported value too, so the
+    // containment check above cannot catch an average on its own).
+    expect(only?.representativeConfidence).toBe(only?.untrustedModelConfidence.reported[0]);
+  });
+
+  it('carries the representative run\'s wear-and-tear framing, both sides or neither', () => {
+    const framed = {
+      ...stain(0.8, 'A dark stain on the floor near the doorway.'),
+      wearAndTear: {
+        landlordMayArgue: 'The stain is new damage from a spill.',
+        tenantsTypicallyCounter: 'Floor staining accrues with ordinary use.',
+      },
+    };
+    const merged = mergeSelfConsistent([run(framed), run(framed), run(framed)]);
+
+    expect(merged.changes[0]?.wearAndTear).toEqual({
+      landlordMayArgue: 'The stain is new damage from a spill.',
+      tenantsTypicallyCounter: 'Floor staining accrues with ordinary use.',
+    });
+  });
+
+  it('omits wearAndTear entirely when the model offered none', () => {
+    const present = run(stain(0.5, 'A dark stain on the floor near the doorway.'));
+    const merged = mergeSelfConsistent([present, present, present]);
+    expect(merged.changes[0]).not.toHaveProperty('wearAndTear');
+  });
+
   it('exposes no aggregate of the model numbers to compute with', () => {
     const merged = mergeSelfConsistent([
       run(stain(0.9, 'A dark stain on the floor near the doorway.')),

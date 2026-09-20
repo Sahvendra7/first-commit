@@ -37,6 +37,30 @@ export default tseslint.config(
   },
 
   /**
+   * The service worker is a classic worker script, not a module, and it runs
+   * in a scope the browser provides: `self`, `caches`, `fetch`, `Response`,
+   * `URL`. Flat config ignores `/* eslint-env *\/` comments, so the globals
+   * are declared here instead — otherwise every one of them is `no-undef`.
+   */
+  {
+    name: 'handover/service-worker',
+    files: ['apps/web/public/sw.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        self: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
+        URL: 'readonly',
+        Promise: 'readonly',
+      },
+    },
+  },
+
+  /**
    * domain-purity — architecture.md §14 and §19.
    *
    * apps/api/src/domain/ is the modular-monolith core: state machine, evidence

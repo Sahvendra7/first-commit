@@ -67,6 +67,27 @@ export interface MergedChange {
   readonly observationCount: number;
   /** `runCount / sampleCount`. The only confidence this system trusts. */
   readonly agreementFrequency: number;
+  /**
+   * The representative run's **own** reported confidence — one number, chosen
+   * by the same selection that chose the wording above, never computed from
+   * the others.
+   *
+   * It exists because the frozen `diffChangeSchema.confidence` is required and
+   * `docs/web-contract.md` §0.1 states that the field is model-reported and
+   * that `agreementFrequency` "deliberately does not cross the wire". So the
+   * wire needs a model number, and this is the only one that can be produced
+   * without arithmetic: picking the representative's value is a selection, not
+   * an average, a max or a score. Everything §9.2 says about the model's
+   * confidence applies to it unchanged — display only, never arithmetic,
+   * never a document.
+   */
+  readonly representativeConfidence: number;
+  /**
+   * The representative run's wear-and-tear framing, when it offered one.
+   * §9.2 marks this "Model, advisory only"; the shape carries two opposed
+   * arguments precisely so there is no verdict to misread.
+   */
+  readonly wearAndTear?: WireChange['wearAndTear'];
   readonly untrustedModelConfidence: UntrustedModelConfidence;
 }
 
@@ -293,6 +314,10 @@ export function mergeSelfConsistent(
       runCount,
       observationCount,
       agreementFrequency,
+      representativeConfidence: representative.change.confidence,
+      ...(representative.change.wearAndTear !== undefined
+        ? { wearAndTear: representative.change.wearAndTear }
+        : {}),
       untrustedModelConfidence: {
         reported,
         trusted: false,

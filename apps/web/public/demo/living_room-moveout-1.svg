@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img">
+  <rect width="1280" height="720" fill="#e7e2d9"/>
+  <rect y="561.6" width="1280" height="158.4" fill="#b99a72"/>
+  <rect x="102.4" y="129.6" width="256" height="302.4" fill="#cfd8e3" stroke="#8b9bb0" stroke-width="3"/>
+  <rect x="896" y="374.40000000000003" width="153.6" height="187.20000000000002" fill="#8d6e52"/>
+  
+  <text x="640" y="64.8" font-family="system-ui, sans-serif" font-size="36" fill="#5b6472" text-anchor="middle">Living Room — Move-out — pair 1</text>
+  <text x="640" y="687.6" font-family="system-ui, sans-serif" font-size="27" fill="#7a2e2e" text-anchor="middle" font-weight="600">PLACEHOLDER — NOT A REAL PHOTOGRAPH</text>
+</svg>
