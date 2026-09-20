@@ -49,10 +49,23 @@
     --c-line: 228 225 216;
     --c-line-strong: 209 204 191;
 
-    /* Text */
+    /*
+     * Text.
+     *
+     * `ink-3` is the lightest tone any *text* may use. It was `104 118 123`,
+     * which measured 4.2:1 on `brand-tint` and 4.31:1 on `paper` — under
+     * WCAG AA's 4.5:1 for body text on the two surfaces it appears on most.
+     * At `97 111 116` the worst case in the app is 4.66:1.
+     *
+     * `ink-4` is **not a text colour**. It is the hairline-and-glyph tone:
+     * placeholders, an inactive chevron, a border, an empty-state drawing —
+     * things WCAG scores as non-text, at 3:1. Darkening it to pass as body
+     * text would have collapsed it into `ink-3` and flattened the ladder to
+     * three tones. Anything that reads as a sentence uses `ink-3`.
+     */
     --c-ink: 20 25 27;
     --c-ink-2: 61 74 78;
-    --c-ink-3: 104 118 123;
+    --c-ink-3: 97 111 116;
     --c-ink-4: 148 160 164;
 
     /* Brand */
@@ -61,8 +74,13 @@
     --c-brand-tint: 231 239 238;
     --c-brand-line: 190 214 211;
 
-    /* Evidence marks */
-    --c-accent: 178 96 58;
+    /*
+     * Evidence marks. `167 85 47` rather than `178 96 58`: the badge that uses
+     * this pairs it with `accent-tint`, and that pairing measured 4.01:1 —
+     * below AA for the small uppercase type the badge is set in. It is the
+     * same ochre, two steps down.
+     */
+    --c-accent: 167 85 47;
     --c-accent-tint: 250 239 231;
 
     /* Status */

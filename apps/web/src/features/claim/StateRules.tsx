@@ -139,7 +139,7 @@ export function StateRules({ rules, className }: StateRulesProps) {
               .map((step, index) => (
                 <li key={step.order} className="text-sm" data-testid={`escalation-${step.order}`}>
                   <p className="font-semibold text-ink">
-                    <span className="tnum mr-1.5 text-ink-4">{index + 1}</span>
+                    <span className="tnum mr-1.5 text-ink-3">{index + 1}</span>
                     {step.label}
                     {/*
                       `afterDays: 0` means "straight away", not "after 0 days".
@@ -161,22 +161,33 @@ export function StateRules({ rules, className }: StateRulesProps) {
       {rules.statuteRefs.length > 0 ? (
         <div className="mt-4" data-testid="statute-refs">
           <h3 className="text-sm font-semibold text-ink">Sources</h3>
-          <ul className="mt-1.5 space-y-1.5 text-xs text-ink-2">
+          <ul className="mt-1 space-y-0.5 text-xs text-ink-2">
             {rules.statuteRefs.map((ref) => (
               <li key={ref.citation}>
                 {ref.url ? (
+                  /*
+                    The citation and its title are one target, and the block is
+                    padded to a real one. As a bare inline anchor the citation
+                    measured 14px tall — under WCAG 2.5.8's 24px floor, on a
+                    link that opens a statute in a new tab from a phone.
+                  */
                   <a
                     href={ref.url}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="font-medium text-brand-hi underline underline-offset-2"
+                    className="-mx-2 block rounded-lg px-2 py-2 transition-colors duration-[var(--dur-1)] hover:bg-sunk"
                   >
-                    {ref.citation}
+                    <span className="font-medium text-brand-hi underline underline-offset-2">
+                      {ref.citation}
+                    </span>
+                    <span className="mt-0.5 block text-ink-3">{ref.title}</span>
                   </a>
                 ) : (
-                  <span className="font-medium text-ink">{ref.citation}</span>
+                  <div className="py-2">
+                    <span className="font-medium text-ink">{ref.citation}</span>
+                    <span className="mt-0.5 block text-ink-3">{ref.title}</span>
+                  </div>
                 )}
-                <span className="block text-ink-3">{ref.title}</span>
               </li>
             ))}
           </ul>

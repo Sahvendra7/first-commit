@@ -260,7 +260,7 @@ export function CompareSlider({
             aria-pressed={view === mode}
             onClick={() => setView(mode)}
             data-testid={`compare-view-${mode.toLowerCase()}`}
-            className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition-colors duration-[var(--dur-1)] ${
+            className={`min-h-11 rounded-lg px-3.5 text-xs font-semibold transition-colors duration-[var(--dur-1)] ${
               view === mode
                 ? night
                   ? 'bg-white text-night'
@@ -472,7 +472,7 @@ export function CompareSlider({
       afterAspect !== undefined &&
       Math.abs(beforeAspect - afterAspect) > 0.01 ? (
         <p
-          className={`mt-2.5 text-[0.6875rem] leading-relaxed ${night ? 'text-white/40' : 'text-ink-3'}`}
+          className={`mt-2.5 text-[0.6875rem] leading-relaxed ${night ? 'text-white/55' : 'text-ink-3'}`}
           data-testid="aspect-mismatch-note"
         >
           These photographs were taken at different aspect ratios, so both are shown

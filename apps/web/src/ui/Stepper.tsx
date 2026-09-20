@@ -104,7 +104,9 @@ export function Stepper({ steps, currentIndex, className, ...rest }: StepperProp
               <span
                 className={[
                   'mt-2 block w-full truncate px-0.5 text-center text-[0.6875rem] font-semibold tracking-[0.01em]',
-                  active ? 'text-brand' : done ? 'text-ink-2' : 'text-ink-4',
+                  // `ink-3`, not `ink-4`: this is a word, and `ink-4` is the
+                  // hairline tone. It measured 2.68:1 on white.
+                  active ? 'text-brand' : done ? 'text-ink-2' : 'text-ink-3',
                 ].join(' ')}
               >
                 {step.label}
