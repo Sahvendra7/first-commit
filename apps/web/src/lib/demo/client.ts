@@ -45,6 +45,7 @@ import {
   DEMO_TENANCY_ID,
   DEMO_URL_EXPIRES_AT,
   demoDemandLetter,
+  demoConditionReport,
   demoTenancy,
 } from './tenancy.js';
 
@@ -147,6 +148,22 @@ export class DemoApiClient implements HandoverApiClient {
       throw new NetworkError(`demo network failure uploading ${upload.clientRef}`);
     }
     this.uploaded.set(upload.s3Key, body.size);
+
+    const parts = upload.s3Key.split('/');
+    if (parts.length >= 3) {
+      const [, phase, roomId] = parts;
+      const nextRooms = this.#tenancy.rooms.map((r) => {
+        if (r.roomId === roomId) {
+          return {
+            ...r,
+            photoCountMovein: phase === 'MOVEIN' ? r.photoCountMovein + 1 : r.photoCountMovein,
+            photoCountMoveout: phase === 'MOVEOUT' ? r.photoCountMoveout + 1 : r.photoCountMoveout,
+          };
+        }
+        return r;
+      });
+      this.#tenancy = { ...this.#tenancy, rooms: nextRooms };
+    }
   }
 
   async completePhase(
@@ -177,8 +194,20 @@ export class DemoApiClient implements HandoverApiClient {
      *
      * Keyed on `resultRef` so re-polling a finished job is idempotent.
      */
-    if (job.status === 'DONE' && job.type === 'LETTER' && job.resultRef) {
-      this.#ensureLetterDocument(job.resultRef);
+    if (job.status === 'DONE') {
+      if (job.type === 'CONDITION_REPORT') {
+        this.#tenancy = { 
+          ...this.#tenancy, 
+          status: 'MOVEOUT_PENDING',
+          documents: this.#tenancy.documents.some((d) => d.docType === 'CONDITION_REPORT') 
+            ? this.#tenancy.documents 
+            : [...this.#tenancy.documents, demoConditionReport]
+        };
+      } else if (job.type === 'DIFF') {
+        this.#tenancy = { ...this.#tenancy, status: 'AWAITING_REFUND' };
+      } else if (job.type === 'LETTER' && job.resultRef) {
+        this.#ensureLetterDocument(job.resultRef);
+      }
     }
     return job;
   }

@@ -82,7 +82,7 @@ export const DEMO_PHOTOS: readonly PhotoRef[] = DEMO_ROOMS.flatMap((room) =>
   ),
 );
 
-const CONDITION_REPORT: DocumentRef = {
+export const demoConditionReport: DocumentRef = {
   documentId: 'doc_demo_condition',
   docType: 'CONDITION_REPORT',
   sha256: fixtureDigest('doc_demo_condition'),
@@ -116,7 +116,7 @@ export function demoDemandLetter(documentId: string): DocumentRef {
 export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
   tenancy: {
     tenancyId: DEMO_TENANCY_ID,
-    status: 'AWAITING_REFUND',
+    status: 'MOVEIN_PENDING',
     addressLine: '4B, Nandi Residency, 12th Main',
     city: 'Bengaluru',
     stateCode: 'KA',
@@ -133,8 +133,8 @@ export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
     roomId: room.roomId,
     label: room.label,
     orderIndex: room.orderIndex,
-    photoCountMovein: DEMO_PAIR_INDEXES.length,
-    photoCountMoveout: DEMO_PAIR_INDEXES.length,
+    photoCountMovein: 0,
+    photoCountMoveout: 0,
   })),
   photos: DEMO_PHOTOS,
   // Note: RoomDiff, not RoomDiffView — the aggregate carries no before/after.
@@ -145,5 +145,5 @@ export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
     changes: [],
     reviewReason: 'AI_DISABLED',
   })),
-  documents: [CONDITION_REPORT],
+  documents: [],
 });
