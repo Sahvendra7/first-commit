@@ -106,15 +106,6 @@ Read this before assuming anything is callable.
   make `?demo=1` (§8) work first. It is the only path that runs end to end
   without a backend, and it doubles as the fixture set for component tests.
 
-#### A known contract gap
-
-`data/state-rules/README.md` says `lastReviewedAt` is "surfaced in the UI", and
-`StateRuleItem` carries it — but **`getStateRulesResponseSchema` has no
-`lastReviewedAt` field**, so it does not cross the wire. Do not add it:
-`packages/shared` is frozen, and a contract change needs a written decision
-first (`CLAUDE.md`). Build the state-rules UI without that date, and raise the
-gap rather than working around it.
-
 ---
 
 ## 1. Primitives
@@ -313,8 +304,15 @@ tenancy data, and powers UI copy about deadlines and caps:
   authorityName: string,
   escalationSteps: [{ order, label, description, afterDays? }],
   statuteRefs: [{ citation, title, url? }],
+  lastReviewedAt?: string,             // isoDateSchema, YYYY-MM-DD
 }
 ```
+
+**Show `lastReviewedAt` next to every deadline you derive from these rules**
+(R9). The table is reviewed data, not a live feed; a stale entry cites a wrong
+deadline at a tenant, and the review date is what makes that visible. It is
+optional on the wire — when it is absent, omit the line rather than falling back
+to today's date or to `updatedAt`.
 
 ---
 
@@ -755,6 +753,9 @@ ids, no secrets. The repo carries none of those anywhere.
 - **Do not edit `packages/shared`.** Item shapes, the diff schema and the API
   schemas were fixed in Phase 0 and are consumed by both apps. If a change looks
   unavoidable, stop and write down the decision before touching code.
+  One amendment has been approved and is already applied: optional
+  `lastReviewedAt` on `getStateRulesResponseSchema` and `StateRuleItem`, for R9
+  (see §3 "State rules"). Nothing else in the package is open.
 - **Do not implement the send endpoint**, do not add an SES adapter, do not
   build anything in §15.3 "Explicitly not built" (landlord accounts, video
   capture, offline capture, payments, analytics dashboards, multi-property

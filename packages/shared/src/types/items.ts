@@ -190,6 +190,10 @@ export interface StateRuleItem extends BaseItem {
   authorityName: string;
   escalationSteps: EscalationStep[];
   statuteRefs: StatuteRef[];
+  /** Date the rules were last human-reviewed (R9). Mirrors `lastReviewedAt` in
+   * the `data/state-rules/` files and crosses the wire on
+   * `getStateRulesResponseSchema`. */
+  lastReviewedAt?: IsoDate;
   updatedAt: IsoDateTime;
 }
 
