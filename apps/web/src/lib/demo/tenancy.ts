@@ -1,0 +1,131 @@
+/**
+ * The seeded tenancy — `docs/web-contract.md` §8 "Seed content".
+ *
+ * Parsed with the frozen schema at module load, never cast. A fixture that
+ * drifts from `packages/shared` fails a test rather than the demo.
+ */
+import {
+  getTenancyResponseSchema,
+  toPaise,
+  type DocumentRef,
+  type GetTenancyResponse,
+  type Phase,
+  type PhotoRef,
+} from '@handover/shared';
+import { fixtureDigest } from './ids.js';
+
+export const DEMO_TENANCY_ID = 'tn_demo_0001';
+
+/**
+ * Capture days. `receivedAt` is the **server** clock — the instant the ledger
+ * attests to — so the two clusters are the two days the tenant walked the flat.
+ */
+const MOVEIN_AT = '2025-09-02T09:14:00.000Z';
+const MOVEOUT_AT = '2026-09-15T11:02:00.000Z';
+
+export interface DemoRoomSeed {
+  readonly roomId: string;
+  readonly key: string;
+  readonly label: string;
+  readonly orderIndex: number;
+}
+
+/** Four of the six default presets — enough to scroll, few enough to demo fast. */
+export const DEMO_ROOMS: readonly DemoRoomSeed[] = [
+  { roomId: 'rm_demo_living', key: 'living_room', label: 'Living Room', orderIndex: 0 },
+  { roomId: 'rm_demo_kitchen', key: 'kitchen', label: 'Kitchen', orderIndex: 1 },
+  { roomId: 'rm_demo_bed1', key: 'bedroom_1', label: 'Bedroom 1', orderIndex: 2 },
+  { roomId: 'rm_demo_bath1', key: 'bathroom_1', label: 'Bathroom 1', orderIndex: 3 },
+];
+
+/** Far future, so no expiry logic fires on a bundled asset (§8 rule 3). */
+export const DEMO_URL_EXPIRES_AT = '2099-01-01T00:00:00.000Z';
+
+/** Two pairs per room per phase. `pairIndex` is the pairing key. */
+export const DEMO_PAIR_INDEXES = [0, 1] as const;
+
+/**
+ * Demo assets are bundled under `public/demo/`, but `photoRefSchema.url` is
+ * `z.string().url()` — an absolute URL. `docs/web-contract.md` §8 rule 3 shows
+ * a root-relative path (`/demo/living-room-movein-0.jpg`), which the frozen
+ * schema rejects; the brief itself says the code wins when the two disagree,
+ * so the asset path is resolved against the page origin instead.
+ *
+ * The fallback origin is only reached in a non-DOM context; it is never
+ * fetched, because these fixtures never run outside a browser or jsdom.
+ */
+export function demoAssetUrl(path: string): string {
+  const origin = globalThis.location?.origin ?? 'https://demo.invalid';
+  return new URL(path, origin).toString();
+}
+
+function photoFor(room: DemoRoomSeed, phase: Phase, pairIndex: number): PhotoRef {
+  const photoId = `ph_${room.key}_${phase.toLowerCase()}_${pairIndex}`;
+  return {
+    photoId,
+    roomId: room.roomId,
+    phase,
+    pairIndex,
+    sha256: fixtureDigest(photoId),
+    bytes: 312_480 + pairIndex * 4_096,
+    receivedAt: phase === 'MOVEIN' ? MOVEIN_AT : MOVEOUT_AT,
+    // Bundled asset, not presigned — the one field whose semantics differ
+    // from production (§8 rule 3).
+    url: demoAssetUrl(`/demo/${room.key}-${phase.toLowerCase()}-${pairIndex}.svg`),
+    urlExpiresAt: DEMO_URL_EXPIRES_AT,
+  };
+}
+
+export const DEMO_PHOTOS: readonly PhotoRef[] = DEMO_ROOMS.flatMap((room) =>
+  (['MOVEIN', 'MOVEOUT'] as const).flatMap((phase) =>
+    DEMO_PAIR_INDEXES.map((pairIndex) => photoFor(room, phase, pairIndex)),
+  ),
+);
+
+const CONDITION_REPORT: DocumentRef = {
+  documentId: 'doc_demo_condition',
+  docType: 'CONDITION_REPORT',
+  sha256: fixtureDigest('doc_demo_condition'),
+  // The human-readable record id printed in the PDF footer.
+  recordRef: 'HANDOVER-2025-09-02-KA-0001',
+  createdAt: '2025-09-02T09:41:00.000Z',
+  url: demoAssetUrl('/demo/condition-report.pdf'),
+  urlExpiresAt: DEMO_URL_EXPIRES_AT,
+  // `sentAt` and `sesMessageId` are deliberately absent: SES is cut, so they
+  // are always absent in this build too.
+};
+
+export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
+  tenancy: {
+    tenancyId: DEMO_TENANCY_ID,
+    status: 'MOVEOUT_COMPLETE',
+    addressLine: '4B, Nandi Residency, 12th Main',
+    city: 'Bengaluru',
+    stateCode: 'KA',
+    monthlyRentPaise: toPaise(4_500_000),
+    depositPaise: toPaise(20_000_000),
+    moveInDate: '2025-09-02',
+    handoverDate: '2026-09-15',
+    // handover + the KA refund window (30 days).
+    refundDueDate: '2026-10-15',
+    landlordEmail: 'landlord@example.com',
+    createdAt: '2025-09-02T08:55:00.000Z',
+  },
+  rooms: DEMO_ROOMS.map((room) => ({
+    roomId: room.roomId,
+    label: room.label,
+    orderIndex: room.orderIndex,
+    photoCountMovein: DEMO_PAIR_INDEXES.length,
+    photoCountMoveout: DEMO_PAIR_INDEXES.length,
+  })),
+  photos: DEMO_PHOTOS,
+  // Note: RoomDiff, not RoomDiffView — the aggregate carries no before/after.
+  diffs: DEMO_ROOMS.map((room) => ({
+    roomId: room.roomId,
+    roomLabel: room.label,
+    status: 'NEEDS_REVIEW',
+    changes: [],
+    reviewReason: 'AI_DISABLED',
+  })),
+  documents: [CONDITION_REPORT],
+});

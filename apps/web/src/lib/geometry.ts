@@ -127,3 +127,75 @@ export function describeBoxPosition(box: NormalizedBox): string {
   const horizontal = cx < 1 / 3 ? 'left' : cx < 2 / 3 ? 'centre' : 'right';
   return `${vertical} ${horizontal} of the frame`;
 }
+
+/* ── Aspect-ratio reconciliation ────────────────────────────────────────────
+ *
+ * A move-in photo and a move-out photo of the same room are routinely not the
+ * same shape: a different phone, a rotation, a crop. Both are rendered
+ * letterboxed (`object-fit: contain`) inside one shared comparison frame, so
+ * neither is distorted and the slider divides a single rectangle.
+ *
+ * That means a box normalised against the *image* is not the same box
+ * normalised against the *frame*. These two functions are the bridge, and they
+ * are pure so the mapping can be tested without laying anything out.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Where an image of aspect `imageAspect` (w / h) actually lands inside a frame
+ * of aspect `frameAspect`, in normalised frame coordinates, under
+ * `object-fit: contain`.
+ *
+ * A non-finite or non-positive aspect (an image that has not loaded yet, which
+ * is the normal first-paint state) falls back to filling the frame, so the
+ * overlay never jumps to NaN while a photo is in flight.
+ */
+export function containRect(imageAspect: number, frameAspect: number): NormalizedBox {
+  if (
+    !Number.isFinite(imageAspect) ||
+    !Number.isFinite(frameAspect) ||
+    imageAspect <= 0 ||
+    frameAspect <= 0
+  ) {
+    return { x: 0, y: 0, w: 1, h: 1 };
+  }
+  if (imageAspect > frameAspect) {
+    // Wider than the frame: pinned to the full width, letterboxed top and bottom.
+    const h = frameAspect / imageAspect;
+    return { x: 0, y: (1 - h) / 2, w: 1, h };
+  }
+  // Taller than (or equal to) the frame: full height, pillarboxed left and right.
+  const w = imageAspect / frameAspect;
+  return { x: (1 - w) / 2, y: 0, w, h: 1 };
+}
+
+/** Maps a box in normalised *image* space into normalised *frame* space. */
+export function projectBoxToFrame(
+  box: NormalizedBox,
+  content: NormalizedBox,
+): NormalizedBox {
+  const b = clampBox(box);
+  return {
+    x: content.x + b.x * content.w,
+    y: content.y + b.y * content.h,
+    w: b.w * content.w,
+    h: b.h * content.h,
+  };
+}
+
+/**
+ * The inverse: a point the tenant touched on the frame, expressed in the
+ * image's own coordinates. Used by the change marker, which must record a box
+ * against the photograph rather than against whatever frame it was shown in.
+ *
+ * A touch on the letterbox bars maps outside 0–1 and is clamped to the image
+ * edge, so a drag that starts on the bar still produces a usable box.
+ */
+export function unprojectPointFromFrame(
+  point: NormalizedPoint,
+  content: NormalizedBox,
+): NormalizedPoint {
+  return {
+    x: content.w > 0 ? clamp01((point.x - content.x) / content.w) : 0,
+    y: content.h > 0 ? clamp01((point.y - content.y) / content.h) : 0,
+  };
+}

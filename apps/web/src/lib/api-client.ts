@@ -100,3 +100,42 @@ export interface HandoverApiClient {
 
   getStateRules(stateCode: string): Promise<GetStateRulesResponse>;
 }
+
+/* ── Demo mode ──────────────────────────────────────────────────────────────
+ *
+ * `docs/web-contract.md` §8 rule 1: **interception lives in exactly one
+ * place — here.** No component, hook or route ever checks for demo mode. A
+ * component that knows it is in a demo is a component whose demo behaviour is
+ * untested in production.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** True when the page was opened with `?demo=1`. */
+export function isDemoMode(search: string = globalThis.location?.search ?? ''): boolean {
+  return new URLSearchParams(search).get('demo') === '1';
+}
+
+export interface ApiClientConfig {
+  readonly baseUrl?: string;
+  readonly getIdToken?: () => Promise<string | undefined>;
+  /** Overrides `?demo=1` detection. Tests pass this explicitly. */
+  readonly demo?: boolean;
+}
+
+/**
+ * The single place a client is chosen. Demo mode resolves from bundled
+ * fixtures with no network calls at all — the venue wifi will fail, and the
+ * whole flow has to render anyway.
+ */
+export async function createApiClient(
+  config: ApiClientConfig = {},
+): Promise<HandoverApiClient> {
+  if (config.demo ?? isDemoMode()) {
+    const { DemoApiClient } = await import('./demo/index.js');
+    return new DemoApiClient();
+  }
+  const { HttpApiClient } = await import('./http-api-client.js');
+  return new HttpApiClient({
+    baseUrl: config.baseUrl ?? '',
+    ...(config.getIdToken ? { getIdToken: config.getIdToken } : {}),
+  });
+}

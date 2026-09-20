@@ -4,9 +4,12 @@ import {
   boxToPercentStyle,
   clamp01,
   clampBox,
+  containRect,
   describeBoxPosition,
   isDegenerateBox,
   pointFromClient,
+  projectBoxToFrame,
+  unprojectPointFromFrame,
 } from './geometry.js';
 
 describe('clamp01', () => {
@@ -156,5 +159,85 @@ describe('describeBoxPosition', () => {
     expect(describeBoxPosition({ x: 0.3, y: 0.3, w: 0.4, h: 0.4 })).toBe(
       'middle centre of the frame',
     );
+  });
+});
+
+describe('containRect', () => {
+  it('fills the frame when the aspects match', () => {
+    expect(containRect(4 / 3, 4 / 3)).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+  });
+
+  it('letterboxes a wide photo inside a squarer frame', () => {
+    // 16:9 inside 4:3 — full width, bars top and bottom.
+    const rect = containRect(16 / 9, 4 / 3);
+    expect(rect.w).toBe(1);
+    expect(rect.h).toBeCloseTo(0.75, 6);
+    expect(rect.x).toBe(0);
+    expect(rect.y).toBeCloseTo(0.125, 6);
+  });
+
+  it('pillarboxes a tall photo inside a wider frame', () => {
+    // 3:4 portrait inside 4:3 landscape — full height, bars left and right.
+    const rect = containRect(3 / 4, 4 / 3);
+    expect(rect.h).toBe(1);
+    expect(rect.w).toBeCloseTo(0.5625, 6);
+    expect(rect.y).toBe(0);
+    expect(rect.x).toBeCloseTo(0.21875, 6);
+  });
+
+  it('always centres the letterbox', () => {
+    const rect = containRect(16 / 9, 1);
+    expect(rect.y).toBeCloseTo((1 - rect.h) / 2, 12);
+  });
+
+  it('falls back to filling the frame while an image has no dimensions yet', () => {
+    expect(containRect(0, 4 / 3)).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    expect(containRect(Number.NaN, 4 / 3)).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    expect(containRect(4 / 3, 0)).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+  });
+});
+
+describe('projectBoxToFrame', () => {
+  it('is the identity when the image fills the frame', () => {
+    const box = { x: 0.2, y: 0.3, w: 0.4, h: 0.1 };
+    expect(projectBoxToFrame(box, { x: 0, y: 0, w: 1, h: 1 })).toEqual(box);
+  });
+
+  it('shifts and shrinks a box into a letterboxed content rect', () => {
+    const content = containRect(16 / 9, 4 / 3); // y 0.125, h 0.75
+    const projected = projectBoxToFrame({ x: 0, y: 0, w: 1, h: 1 }, content);
+    expect(projected.x).toBe(0);
+    expect(projected.y).toBeCloseTo(0.125, 6);
+    expect(projected.w).toBe(1);
+    expect(projected.h).toBeCloseTo(0.75, 6);
+  });
+
+  it('keeps a centred box centred', () => {
+    const content = containRect(3 / 4, 4 / 3);
+    const projected = projectBoxToFrame({ x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, content);
+    expect(projected.x + projected.w / 2).toBeCloseTo(0.5, 6);
+    expect(projected.y + projected.h / 2).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('unprojectPointFromFrame', () => {
+  it('round-trips with projectBoxToFrame', () => {
+    const content = containRect(16 / 9, 4 / 3);
+    const box = { x: 0.25, y: 0.5, w: 0.2, h: 0.2 };
+    const framed = projectBoxToFrame(box, content);
+    const origin = unprojectPointFromFrame({ x: framed.x, y: framed.y }, content);
+    expect(origin.x).toBeCloseTo(box.x, 6);
+    expect(origin.y).toBeCloseTo(box.y, 6);
+  });
+
+  it('clamps a touch on the letterbox bar to the edge of the image', () => {
+    const content = containRect(16 / 9, 4 / 3); // bars above y=0.125
+    expect(unprojectPointFromFrame({ x: 0.5, y: 0 }, content).y).toBe(0);
+    expect(unprojectPointFromFrame({ x: 0.5, y: 1 }, content).y).toBe(1);
+  });
+
+  it('returns 0 rather than Infinity for a zero-sized content rect', () => {
+    const p = unprojectPointFromFrame({ x: 0.5, y: 0.5 }, { x: 0, y: 0, w: 0, h: 0 });
+    expect(p).toEqual({ x: 0, y: 0 });
   });
 });
