@@ -44,16 +44,37 @@ if (!Element.prototype.hasPointerCapture) {
 }
 
 /**
- * jsdom's canvas has no 2D context. `toBlob` is stubbed to produce a
- * deterministic, correctly-typed blob so the upload path can be tested; the
- * dimension arithmetic it depends on lives in `lib/image-resize.ts` and is
- * tested directly, with no canvas involved.
+ * jsdom's canvas has no 2D context, and its `toBlob` **exists but is not
+ * implemented** without the optional `canvas` package — it reports to the
+ * virtual console and never calls back, which hangs any promise wrapping it.
+ * So this is an unconditional override, not a `if (!…)` fallback.
+ *
+ * It produces a deterministic, correctly-typed blob so the upload path can be
+ * tested. The dimension arithmetic that decides what gets drawn lives in
+ * `lib/image-resize.ts` and is tested directly, with no canvas involved.
  */
-if (!HTMLCanvasElement.prototype.toBlob) {
-  HTMLCanvasElement.prototype.toBlob = function toBlob(
-    callback: BlobCallback,
-    type?: string,
-  ): void {
-    callback(new Blob(['stub-canvas-bytes'], { type: type ?? 'image/png' }));
+HTMLCanvasElement.prototype.toBlob = function toBlob(
+  callback: BlobCallback,
+  type?: string,
+): void {
+  callback(new Blob(['stub-canvas-bytes'], { type: type ?? 'image/png' }));
+};
+
+/**
+ * jsdom implements neither `URL.createObjectURL` nor `URL.revokeObjectURL`.
+ * The capture queue uses them for thumbnails, so they exist here as counters
+ * with no backing store — enough for a test to assert that a preview was
+ * created and later released.
+ */
+let objectUrlSeq = 0;
+if (!URL.createObjectURL) {
+  URL.createObjectURL = function createObjectURL(): string {
+    objectUrlSeq += 1;
+    return `blob:handover/${objectUrlSeq}`;
+  };
+}
+if (!URL.revokeObjectURL) {
+  URL.revokeObjectURL = function revokeObjectURL(): void {
+    /* nothing is retained, so nothing is released */
   };
 }
