@@ -31,29 +31,18 @@ import {
   CognitoUserSession,
 } from 'amazon-cognito-identity-js';
 import type { AppConfig } from '../config.js';
+import { AuthError, NewPasswordRequiredError } from './auth-error.js';
 import { MemoryStorage } from './memory-storage.js';
+
+/*
+ * Re-exported so every existing importer keeps working. They live in
+ * `auth-error.ts` because `lib/errors.ts` needs `AuthError` on every screen and
+ * must not drag the Cognito SDK in with it — see that file's header.
+ */
+export { AuthError, NewPasswordRequiredError };
 
 /** Refresh this far ahead of expiry, so a request never races the clock. */
 const REFRESH_MARGIN_MS = 60_000;
-
-export class AuthError extends Error {
-  /** Cognito's exception name, e.g. `NotAuthorizedException`. */
-  readonly code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = 'AuthError';
-    this.code = code;
-  }
-}
-
-/** Raised when Cognito requires a new password before it will issue tokens. */
-export class NewPasswordRequiredError extends AuthError {
-  constructor() {
-    super('NewPasswordRequired', 'This account must set a new password before signing in.');
-    this.name = 'NewPasswordRequiredError';
-  }
-}
 
 export interface AuthUser {
   readonly email: string;

@@ -1,14 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { createApiClient, isDemoMode, type HandoverApiClient } from './lib/api-client.js';
 import { tryLoadConfig, type AppConfig } from './lib/config.js';
 import { phaseOverrideFrom } from './lib/phase.js';
-import { CognitoAuth, type AuthUser } from './lib/auth/cognito-auth.js';
+import type { AuthUser, CognitoAuth } from './lib/auth/cognito-auth.js';
 import { DEMO_TENANCY_ID } from './lib/demo/index.js';
-import { SignIn } from './features/auth/SignIn.js';
 import { Landing } from './features/landing/Landing.js';
 import { CreateTenancy } from './features/tenancy/CreateTenancy.js';
 import { TenancyView } from './features/tenancy/TenancyView.js';
 import { AppShell, Banner, Button, Section } from './ui/index.js';
+
+/**
+ * Split out of the main chunk, and `amazon-cognito-identity-js` with it.
+ *
+ * That library is ~250KB of the bundle, and demo mode — the path a first-time
+ * visitor and every demo takes — never constructs it. Statically importing the
+ * sign-in screen pulled the whole SRP implementation into the first paint of a
+ * page that has no account and no backend. Now the demo never downloads it,
+ * and production fetches it at the moment the visitor asks to sign in.
+ */
+const SignIn = lazy(() =>
+  import('./features/auth/SignIn.js').then((m) => ({ default: m.SignIn })),
+);
 
 /**
  * Application shell: configuration, the auth boundary, and which screen is on.
@@ -40,11 +52,24 @@ export function App() {
   //
   // Not constructed in demo mode, and not merely unused there: demo mode must
   // work with no backend and no account at all, so it must not depend on a
-  // Cognito pool being configured or reachable.
-  const auth = useMemo(
-    () => (!demo && config ? new CognitoAuth(config) : undefined),
-    [demo, config],
-  );
+  // Cognito pool being configured or reachable. That is now enforced by the
+  // module graph rather than by a conditional — the import below only happens
+  // outside demo mode, so the Cognito library is never even fetched there.
+  const [auth, setAuth] = useState<CognitoAuth>();
+
+  useEffect(() => {
+    if (demo || !config) {
+      setAuth(undefined);
+      return;
+    }
+    let cancelled = false;
+    void import('./lib/auth/cognito-auth.js').then(({ CognitoAuth }) => {
+      if (!cancelled) setAuth(new CognitoAuth(config));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [demo, config]);
 
   const [user, setUser] = useState<AuthUser>();
   const [api, setApi] = useState<HandoverApiClient>();
@@ -172,7 +197,16 @@ export function App() {
   if (!demo && !user) {
     return (
       <AppShell width="measure" barActions={barActions}>
-        {auth ? <SignIn auth={auth} onSignedIn={setUser} /> : null}
+        {auth ? (
+          <Suspense fallback={<AuthSkeleton />}>
+            <SignIn auth={auth} onSignedIn={setUser} />
+          </Suspense>
+        ) : (
+          // The Cognito module is still being fetched. A skeleton in the form's
+          // shape rather than a spinner, so the screen does not jump when it
+          // arrives.
+          <AuthSkeleton />
+        )}
       </AppShell>
     );
   }
@@ -258,5 +292,25 @@ function NotConfigured({
     >
       {body}
     </Banner>
+  );
+}
+
+/** The sign-in form's footprint, while its chunk is on the wire. */
+function AuthSkeleton() {
+  return (
+    <div
+      className="mx-auto w-full max-w-measure rounded-3xl border border-line bg-surface p-6 shadow-md sm:p-8"
+      aria-busy="true"
+    >
+      <span className="sr-only">Loading sign in…</span>
+      <div className="h-9 w-9 animate-pulse rounded-xl bg-paper-deep" />
+      <div className="mt-5 h-8 w-40 animate-pulse rounded-lg bg-paper-deep" />
+      <div className="mt-3 h-4 w-full animate-pulse rounded bg-paper-deep" />
+      <div className="mt-6 space-y-4">
+        <div className="h-16 animate-pulse rounded-xl bg-paper-deep" />
+        <div className="h-16 animate-pulse rounded-xl bg-paper-deep" />
+        <div className="h-14 animate-pulse rounded-xl bg-paper-deep" />
+      </div>
+    </div>
   );
 }

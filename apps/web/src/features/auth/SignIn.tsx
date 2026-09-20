@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
-import {
-  NewPasswordRequiredError,
-  type CognitoAuth,
-  type AuthUser,
-} from '../../lib/auth/cognito-auth.js';
+import { NewPasswordRequiredError } from '../../lib/auth/auth-error.js';
+// Type-only: this screen never constructs a `CognitoAuth`, it is handed one.
+// Keeping the import erasable is what keeps the Cognito SDK out of this chunk.
+import type { AuthUser, CognitoAuth } from '../../lib/auth/cognito-auth.js';
 import { toUserFacingError } from '../../lib/errors.js';
+import { Banner, Button, LogoMark, VerifiedGlyph, controlClass } from '../../ui/index.js';
 
 /**
  * The auth boundary — architecture.md §10.2.
@@ -140,119 +140,134 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
           ? 'Set password and sign in'
           : 'Sign in';
 
+  /** Sub-heading per mode. The heading itself is one word or three; this is the sentence. */
+  const lead =
+    mode === 'CONFIRM'
+      ? 'Enter the six-digit code we emailed you.'
+      : mode === 'NEW_PASSWORD'
+        ? 'Your account needs a new password before you can continue.'
+        : mode === 'SIGN_UP'
+          ? 'Your record is private to your account. Creating one is what ties your photographs to you.'
+          : 'Your photographs are private to your account. Signing in is what ties the record to you.';
+
   return (
-    <form onSubmit={submit} className="space-y-3" data-testid="sign-in">
-      <h1 className="text-lg font-semibold text-slate-900">{heading}</h1>
-      <p className="text-sm text-slate-600">
-        {mode === 'CONFIRM'
-          ? 'Enter the six-digit code we emailed you.'
-          : 'Your photographs are private to your account. Signing in is what ties the record to you.'}
-      </p>
+    <form
+      onSubmit={submit}
+      className="enter mx-auto w-full max-w-measure rounded-3xl border border-line bg-surface p-6 shadow-md sm:p-8"
+      data-testid="sign-in"
+    >
+      <LogoMark className="h-9 w-9" />
 
-      <label className="block text-xs font-medium text-slate-700" htmlFor="auth-email">
-        Email
-      </label>
-      <input
-        id="auth-email"
-        type="email"
-        autoComplete="username"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        // The address is fixed once a challenge is in progress: changing it
-        // mid-flow would answer one account's challenge with another's code.
-        disabled={mode === 'NEW_PASSWORD' || mode === 'CONFIRM'}
-        className="mt-1 min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base disabled:bg-slate-100"
-      />
+      <h1 className="mt-5 font-display text-title text-ink">{heading}</h1>
+      <p className="mt-2 text-sm leading-relaxed text-ink-2">{lead}</p>
 
-      {mode === 'NEW_PASSWORD' ? (
-        <>
-          <label className="block text-xs font-medium text-slate-700" htmlFor="auth-new-password">
-            Choose a new password
+      <div className="mt-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-ink" htmlFor="auth-email">
+            Email
           </label>
           <input
-            id="auth-new-password"
-            type="password"
-            autoComplete="new-password"
+            id="auth-email"
+            type="email"
+            autoComplete="username"
             required
-            minLength={12}
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            aria-describedby="auth-password-hint"
-            className="mt-1 min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            // The address is fixed once a challenge is in progress: changing it
+            // mid-flow would answer one account's challenge with another's code.
+            disabled={mode === 'NEW_PASSWORD' || mode === 'CONFIRM'}
+            className={`${controlClass} mt-1.5`}
           />
-          <p id="auth-password-hint" className="text-xs text-slate-500">
-            {PASSWORD_HINT}
-          </p>
-        </>
-      ) : mode === 'CONFIRM' ? (
-        <>
-          <label className="block text-xs font-medium text-slate-700" htmlFor="auth-code">
-            Verification code
-          </label>
-          <input
-            id="auth-code"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            required
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            className="mt-1 min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base tracking-widest"
-          />
-        </>
-      ) : (
-        <>
-          <label className="block text-xs font-medium text-slate-700" htmlFor="auth-password">
-            Password
-          </label>
-          <input
-            id="auth-password"
-            type="password"
-            autoComplete={mode === 'SIGN_UP' ? 'new-password' : 'current-password'}
-            required
-            {...(mode === 'SIGN_UP' ? { minLength: 12 } : {})}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            {...(mode === 'SIGN_UP' ? { 'aria-describedby': 'auth-password-hint' } : {})}
-            className="mt-1 min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base"
-          />
-          {mode === 'SIGN_UP' ? (
-            <p id="auth-password-hint" className="text-xs text-slate-500">
+        </div>
+
+        {mode === 'NEW_PASSWORD' ? (
+          <div>
+            <label className="block text-sm font-medium text-ink" htmlFor="auth-new-password">
+              Choose a new password
+            </label>
+            <input
+              id="auth-new-password"
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={12}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              aria-describedby="auth-password-hint"
+              className={`${controlClass} mt-1.5`}
+            />
+            <p id="auth-password-hint" className="mt-1.5 text-xs text-ink-3">
               {PASSWORD_HINT}
             </p>
-          ) : null}
-        </>
-      )}
+          </div>
+        ) : mode === 'CONFIRM' ? (
+          <div>
+            <label className="block text-sm font-medium text-ink" htmlFor="auth-code">
+              Verification code
+            </label>
+            <input
+              id="auth-code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className={`${controlClass} mt-1.5 text-center text-lg tracking-[0.5em]`}
+            />
+          </div>
+        ) : (
+          <div>
+            <label className="block text-sm font-medium text-ink" htmlFor="auth-password">
+              Password
+            </label>
+            <input
+              id="auth-password"
+              type="password"
+              autoComplete={mode === 'SIGN_UP' ? 'new-password' : 'current-password'}
+              required
+              {...(mode === 'SIGN_UP' ? { minLength: 12 } : {})}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              {...(mode === 'SIGN_UP' ? { 'aria-describedby': 'auth-password-hint' } : {})}
+              className={`${controlClass} mt-1.5`}
+            />
+            {/*
+              The pool's policy, stated before it is hit rather than returned as
+              a rejection after a tenant has chosen something they liked.
+            */}
+            {mode === 'SIGN_UP' ? (
+              <p id="auth-password-hint" className="mt-1.5 text-xs text-ink-3">
+                {PASSWORD_HINT}
+              </p>
+            ) : null}
+          </div>
+        )}
 
-      {error ? (
-        <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {error}
-        </p>
-      ) : null}
-      {notice ? (
-        <p role="status" className="rounded bg-slate-100 px-3 py-2 text-sm text-slate-700">
-          {notice}
-        </p>
-      ) : null}
+        {error ? (
+          <Banner role="alert" tone="danger">
+            {error}
+          </Banner>
+        ) : null}
+        {notice ? (
+          <Banner role="status" tone="brand">
+            {notice}
+          </Banner>
+        ) : null}
 
-      <button
-        type="submit"
-        disabled={busy}
-        data-testid="auth-submit"
-        className="min-h-11 w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
-      >
-        {submitLabel}
-      </button>
+        <Button type="submit" size="lg" block disabled={busy} data-testid="auth-submit">
+          {submitLabel}
+        </Button>
+      </div>
 
       {mode === 'SIGN_IN' ? (
-        <p className="text-center text-sm text-slate-600">
+        <p className="mt-5 text-center text-sm text-ink-2">
           No account yet?{' '}
           <button
             type="button"
             onClick={() => switchTo('SIGN_UP')}
             data-testid="to-sign-up"
-            className="min-h-11 font-semibold text-sky-700 underline"
+            className="min-h-11 font-semibold text-brand-hi underline underline-offset-2"
           >
             Create one
           </button>
@@ -260,13 +275,13 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
       ) : null}
 
       {mode === 'SIGN_UP' ? (
-        <p className="text-center text-sm text-slate-600">
+        <p className="mt-5 text-center text-sm text-ink-2">
           Already have an account?{' '}
           <button
             type="button"
             onClick={() => switchTo('SIGN_IN')}
             data-testid="to-sign-in"
-            className="min-h-11 font-semibold text-sky-700 underline"
+            className="min-h-11 font-semibold text-brand-hi underline underline-offset-2"
           >
             Sign in
           </button>
@@ -274,19 +289,25 @@ export function SignIn({ auth, onSignedIn }: SignInProps) {
       ) : null}
 
       {mode === 'CONFIRM' ? (
-        <p className="text-center text-sm text-slate-600">
+        <p className="mt-5 text-center text-sm text-ink-2">
           Didn&rsquo;t get it?{' '}
           <button
             type="button"
             onClick={() => void resend()}
             disabled={busy}
             data-testid="resend-code"
-            className="min-h-11 font-semibold text-sky-700 underline disabled:opacity-50"
+            className="min-h-11 font-semibold text-brand-hi underline underline-offset-2 disabled:opacity-50"
           >
             Send a new code
           </button>
         </p>
       ) : null}
+
+      <p className="mt-6 flex items-start gap-2 border-t border-line pt-4 text-xs leading-relaxed text-ink-3">
+        <VerifiedGlyph className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ok" />
+        Your session lives in memory only. Closing this tab signs you out, and nothing about
+        your account is written to this device.
+      </p>
     </form>
   );
 }
