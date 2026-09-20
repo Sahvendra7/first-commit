@@ -1,4 +1,5 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { Banner, EvidenceMeta } from '../../ui/index.js';
 import {
   boxToPercentStyle,
   clamp01,
@@ -28,6 +29,15 @@ import {
  *    keeps dragging. `touch-action: none` stops the page scrolling underneath.
  * 3. **Keyboard.** It is a `role="slider"`; arrows, Home and End move it. Not
  *    decoration — a drag-only control is unusable for anyone who cannot drag.
+ *
+ * ── Side by side ────────────────────────────────────────────────────────────
+ *
+ * The slider is the default because it is the only view that puts the two
+ * photographs in the *same* pixels, which is what makes a small difference
+ * visible at all. But it shows half of each at a time, and some comparisons —
+ * "is this the same wall?" — want both whole. So there is a second view, and
+ * it is a genuine toggle rather than a breakpoint: on a phone the two stack,
+ * which is still both-whole and still useful.
  */
 
 /** One image in the pair. `alt` is required — this is evidence, not chrome. */
@@ -91,24 +101,10 @@ export interface CompareSliderProps {
   readonly onImageError?: (which: 'before' | 'after') => void;
 }
 
-/** Enough of the digest to compare by eye, without a line of hex on a phone. */
-function shortDigest(sha256: string): string {
-  return `${sha256.slice(0, 8)}\u2026${sha256.slice(-4)}`;
-}
-
-function formatReceivedAt(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return iso;
-  return parsed.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 const DEFAULT_FALLBACK_ASPECT = 4 / 3;
+
+/** Which of the two views is on. The slider is the default; see the header. */
+type CompareView = 'SLIDER' | 'SIDE_BY_SIDE';
 
 export function CompareSlider({
   before,
@@ -129,6 +125,7 @@ export function CompareSlider({
 
   const [uncontrolled, setUncontrolled] = useState(() => clamp01(defaultPosition));
   const [dragging, setDragging] = useState(false);
+  const [view, setView] = useState<CompareView>('SLIDER');
 
   // Measured on load, so a caller that does not know the intrinsic size of a
   // presigned photo (PhotoRef carries no dimensions) still gets a correct frame.
@@ -224,8 +221,63 @@ export function CompareSlider({
 
   const pct = (value * 100).toFixed(4);
 
+  const showBoth = view === 'SIDE_BY_SIDE';
+
   return (
     <div className={className}>
+      {/*
+        A two-state segmented control rather than a checkbox: the two views are
+        alternatives, not a setting, and `aria-pressed` on a pair of buttons is
+        what says so without inventing a widget role.
+      */}
+      <div
+        role="group"
+        aria-label="Comparison view"
+        className="mb-3 inline-flex rounded-xl border border-line bg-surface p-1 shadow-xs"
+      >
+        {(
+          [
+            ['SLIDER', 'Slider'],
+            ['SIDE_BY_SIDE', 'Side by side'],
+          ] as const
+        ).map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            aria-pressed={view === mode}
+            onClick={() => setView(mode)}
+            data-testid={`compare-view-${mode.toLowerCase()}`}
+            className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition-colors duration-[var(--dur-1)] ${
+              view === mode
+                ? 'bg-brand text-white'
+                : 'text-ink-2 hover:bg-sunk'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {showBoth ? (
+        <div className="grid gap-3 sm:grid-cols-2" data-testid="compare-side-by-side">
+          <StillFrame
+            label={beforeLabel}
+            photo={before}
+            aspect={frameAspect}
+            onMeasured={setMeasuredBefore}
+            onError={() => handleImageError('before')}
+          />
+          <StillFrame
+            label={afterLabel}
+            photo={after}
+            aspect={frameAspect}
+            onMeasured={setMeasuredAfter}
+            onError={() => handleImageError('after')}
+            overlays={overlays ?? []}
+            content={afterContent}
+          />
+        </div>
+      ) : (
       <div
         ref={frameRef}
         role="slider"
@@ -243,7 +295,7 @@ export function CompareSlider({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={handleKeyDown}
-        className="relative w-full select-none overflow-hidden rounded-lg bg-slate-900 outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-sky-500"
+        className="relative w-full cursor-ew-resize select-none overflow-hidden rounded-2xl bg-night shadow-md outline-none ring-offset-2 ring-offset-paper focus-visible:ring-2 focus-visible:ring-brand-hi"
         style={{ aspectRatio: String(frameAspect), touchAction: 'none' }}
       >
         {/*
@@ -276,14 +328,14 @@ export function CompareSlider({
             <div
               key={overlay.id}
               data-testid={`overlay-${overlay.id}`}
-              className={`pointer-events-none absolute border-2 ${
-                overlay.muted ? 'border-slate-400/60' : 'border-amber-400'
+              className={`pointer-events-none absolute rounded-sm border-2 ${
+                overlay.muted ? 'border-ink-4/70' : 'border-accent'
               }`}
               style={style}
             >
               <span
-                className={`absolute left-0 top-full mt-0.5 max-w-[12rem] truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight ${
-                  overlay.muted ? 'bg-slate-500/80 text-white' : 'bg-amber-400 text-slate-900'
+                className={`absolute left-0 top-full mt-1 max-w-[12rem] truncate rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-tight ${
+                  overlay.muted ? 'bg-ink-3/85 text-white' : 'bg-accent text-white'
                 }`}
               >
                 {overlay.label}
@@ -314,38 +366,36 @@ export function CompareSlider({
         <div
           aria-hidden="true"
           data-testid="compare-divider"
-          className="pointer-events-none absolute inset-y-0 w-0.5 bg-white shadow-[0_0_0_1px_rgba(15,23,42,0.35)]"
+          className="pointer-events-none absolute inset-y-0 w-px bg-white/90 shadow-[0_0_0_1px_rgb(var(--c-night)/0.45)]"
           style={{ left: `${pct}%` }}
         >
-          <div className="absolute left-1/2 top-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white shadow-md">
-            <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-700" fill="currentColor">
+          <div
+            className={`absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white ring-1 ring-night/10 transition-shadow duration-[var(--dur-1)] ${
+              dragging ? 'shadow-lg' : 'shadow-md'
+            }`}
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5 text-brand" fill="currentColor">
               <path d="M9.5 6 5 12l4.5 6V6Zm5 0v12l4.5-6-4.5-6Z" />
             </svg>
           </div>
         </div>
 
-        <span className="pointer-events-none absolute left-2 top-2 rounded bg-slate-900/70 px-2 py-0.5 text-xs font-medium text-white">
-          {beforeLabel}
-        </span>
-        <span className="pointer-events-none absolute right-2 top-2 rounded bg-slate-900/70 px-2 py-0.5 text-xs font-medium text-white">
-          {afterLabel}
-        </span>
+        <PhaseChip className="left-3 top-3">{beforeLabel}</PhaseChip>
+        <PhaseChip className="right-3 top-3">{afterLabel}</PhaseChip>
       </div>
+      )}
 
       {failed.before || failed.after ? (
-        <p
-          role="status"
-          data-testid="photo-expired"
-          className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
-        >
+        <Banner role="status" tone="warn" className="mt-3" data-testid="photo-expired">
           A photograph could not be loaded. Secure photo links expire after five minutes —
           reload this page to refresh them.
-        </p>
+        </Banner>
       ) : null}
 
-      <p id={labelId} className="mt-2 text-xs text-slate-600">
-        Drag to compare {beforeLabel.toLowerCase()} with {afterLabel.toLowerCase()}. Use the
-        arrow keys for fine control.
+      <p id={labelId} className="mt-3 text-xs text-ink-3">
+        {showBoth
+          ? `${beforeLabel} and ${afterLabel}, side by side. Switch to the slider to see the two in the same frame.`
+          : `Drag to compare ${beforeLabel.toLowerCase()} with ${afterLabel.toLowerCase()}. Use the arrow keys for fine control.`}
       </p>
 
       {/*
@@ -354,29 +404,21 @@ export function CompareSlider({
         is the server clock — the instant the record attests to.
       */}
       {before.sha256 ?? after.sha256 ?? before.receivedAt ?? after.receivedAt ? (
-        <dl
+        <div
           data-testid="evidence-meta"
-          className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] leading-tight text-slate-500"
+          className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-line bg-sunk p-3"
         >
-          <div>
-            <dt className="font-medium text-slate-600">{beforeLabel}</dt>
-            {before.receivedAt ? <dd>{formatReceivedAt(before.receivedAt)}</dd> : null}
-            {before.sha256 ? (
-              <dd className="font-mono" title={before.sha256}>
-                {shortDigest(before.sha256)}
-              </dd>
-            ) : null}
-          </div>
-          <div>
-            <dt className="font-medium text-slate-600">{afterLabel}</dt>
-            {after.receivedAt ? <dd>{formatReceivedAt(after.receivedAt)}</dd> : null}
-            {after.sha256 ? (
-              <dd className="font-mono" title={after.sha256}>
-                {shortDigest(after.sha256)}
-              </dd>
-            ) : null}
-          </div>
-        </dl>
+          <EvidenceMeta
+            label={beforeLabel}
+            {...(before.receivedAt ? { receivedAt: before.receivedAt } : {})}
+            {...(before.sha256 ? { sha256: before.sha256 } : {})}
+          />
+          <EvidenceMeta
+            label={afterLabel}
+            {...(after.receivedAt ? { receivedAt: after.receivedAt } : {})}
+            {...(after.sha256 ? { sha256: after.sha256 } : {})}
+          />
+        </div>
       ) : null}
 
       {/*
@@ -386,7 +428,7 @@ export function CompareSlider({
       {beforeAspect !== undefined &&
       afterAspect !== undefined &&
       Math.abs(beforeAspect - afterAspect) > 0.01 ? (
-        <p className="mt-1 text-xs text-slate-500" data-testid="aspect-mismatch-note">
+        <p className="mt-2 text-xs text-ink-3" data-testid="aspect-mismatch-note">
           These photographs were taken at different aspect ratios, so both are shown
           letterboxed inside the same frame. Neither image has been cropped or stretched.
         </p>
@@ -398,5 +440,85 @@ export function CompareSlider({
         </span>
       ) : null}
     </div>
+  );
+}
+
+/** The phase marker that sits on a photograph. One shape, both views. */
+function PhaseChip({
+  className,
+  children,
+}: {
+  readonly className?: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={[
+        'pointer-events-none absolute rounded-full bg-night/75 px-2.5 py-1',
+        'text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-white backdrop-blur-sm',
+        className ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * One whole photograph, for the side-by-side view.
+ *
+ * It shares the slider's frame aspect rather than taking its own, so the two
+ * panels are the same size and the eye can move between them without
+ * re-anchoring — which is the entire point of looking at them side by side.
+ */
+function StillFrame({
+  label,
+  photo,
+  aspect,
+  onMeasured,
+  onError,
+  overlays,
+  content,
+}: {
+  readonly label: string;
+  readonly photo: ComparePhoto;
+  readonly aspect: number;
+  readonly onMeasured: (aspect: number) => void;
+  readonly onError: () => void;
+  readonly overlays?: readonly CompareOverlayBox[];
+  /** The letterboxed rect this photo occupies in the frame, from `containRect`. */
+  readonly content?: NormalizedBox;
+}) {
+  return (
+    <figure
+      className="relative overflow-hidden rounded-2xl bg-night shadow-md"
+      style={{ aspectRatio: String(aspect) }}
+    >
+      <img
+        src={photo.url}
+        alt={photo.alt}
+        draggable={false}
+        onLoad={(e) => {
+          const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+          if (w > 0 && h > 0) onMeasured(w / h);
+        }}
+        onError={onError}
+        className="absolute inset-0 h-full w-full object-contain"
+      />
+      {content
+        ? overlays?.map((overlay) => (
+            <div
+              key={overlay.id}
+              className={`pointer-events-none absolute rounded-sm border-2 ${
+                overlay.muted ? 'border-ink-4/70' : 'border-accent'
+              }`}
+              style={boxToPercentStyle(projectBoxToFrame(overlay.box, content))}
+            />
+          ))
+        : null}
+      <PhaseChip className="left-3 top-3">{label}</PhaseChip>
+    </figure>
   );
 }

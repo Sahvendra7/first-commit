@@ -516,6 +516,12 @@ export function TenancyView({
             }}
           />
 
+          {/*
+            The marking panel is carded to match the capture panel beside it.
+            Two panels in one row, one floating on the page background and the
+            other on a surface, reads as an unfinished layout rather than a
+            deliberate one.
+          */}
           {annotationPhoto ? (
             <Section
               headingLevel={2}
@@ -523,6 +529,7 @@ export function TenancyView({
               eyebrow="Your record"
               title="Mark what changed"
               lead="Drag a box around anything that is different, then describe it. A change described in words is a complete change — drawing is optional."
+              className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6"
             >
               <ChangeMarker
                 imageUrl={annotationPhoto.url}

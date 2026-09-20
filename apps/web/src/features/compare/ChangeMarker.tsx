@@ -13,6 +13,7 @@ import {
   type NormalizedPoint,
 } from '../../lib/geometry.js';
 import { validateMark, type MarkedChange } from '../../lib/marked-change.js';
+import { Badge, Button, controlClass } from '../../ui/index.js';
 
 /**
  * The tenant marks a change on the move-out photograph (web-contract §0.2).
@@ -226,7 +227,7 @@ export function ChangeMarker({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        className="relative w-full select-none overflow-hidden rounded-lg bg-slate-900"
+        className="relative w-full cursor-crosshair select-none overflow-hidden rounded-2xl bg-night shadow-md"
         style={{ aspectRatio: String(frameAspect), touchAction: 'none' }}
       >
         <img
@@ -245,10 +246,10 @@ export function ChangeMarker({
             <div
               key={mark.id}
               data-testid={`mark-box-${mark.id}`}
-              className="pointer-events-none absolute border-2 border-amber-400 bg-amber-400/10"
+              className="pointer-events-none absolute rounded-sm border-2 border-accent bg-accent/15"
               style={boxToPercentStyle(projectBoxToFrame(mark.box, content))}
             >
-              <span className="absolute left-0 top-0 -translate-y-full rounded bg-amber-400 px-1 text-[10px] font-semibold text-slate-900">
+              <span className="absolute left-0 top-0 flex h-5 w-5 -translate-y-full items-center justify-center rounded-md bg-accent text-[10px] font-bold text-white">
                 {index + 1}
               </span>
             </div>
@@ -258,13 +259,13 @@ export function ChangeMarker({
         {liveBox ? (
           <div
             data-testid="draft-box"
-            className="pointer-events-none absolute border-2 border-dashed border-sky-300 bg-sky-300/10"
+            className="pointer-events-none absolute rounded-sm border-2 border-dashed border-white/80 bg-white/10"
             style={boxToPercentStyle(projectBoxToFrame(liveBox, content))}
           />
         ) : null}
       </div>
 
-      <p className="mt-2 text-xs text-slate-600">
+      <p className="mt-3 text-xs text-ink-3">
         Drag a box around anything that has changed since move-in, then describe it.
       </p>
 
@@ -273,13 +274,9 @@ export function ChangeMarker({
         the primary action and must be reachable in one tap — including for
         someone who cannot drag.
       */}
-      <button
-        type="button"
-        onClick={startUndrawn}
-        className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800"
-      >
+      <Button tone="secondary" block className="mt-3" onClick={startUndrawn}>
         Add a change without drawing
-      </button>
+      </Button>
 
       {draft ? (
         <form
@@ -289,15 +286,15 @@ export function ChangeMarker({
             event.preventDefault();
             save();
           }}
-          className="mt-3 space-y-3 rounded-lg border border-slate-300 bg-white p-3"
+          className="mt-4 space-y-4 rounded-2xl border border-line bg-surface p-4 shadow-sm"
         >
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-medium text-slate-700">
+            <label className="block text-sm font-medium text-ink">
               What kind of change
               <select
                 value={draft.type}
                 onChange={(e) => setDraft({ ...draft, type: e.target.value as ChangeType })}
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                className={`${controlClass} mt-1.5 text-sm`}
               >
                 {CHANGE_TYPES.map((type) => (
                   <option key={type} value={type}>
@@ -307,14 +304,14 @@ export function ChangeMarker({
               </select>
             </label>
 
-            <label className="block text-xs font-medium text-slate-700">
+            <label className="block text-sm font-medium text-ink">
               Surface (optional)
               <select
                 value={draft.surface}
                 onChange={(e) =>
                   setDraft({ ...draft, surface: e.target.value as ChangeSurface | '' })
                 }
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                className={`${controlClass} mt-1.5 text-sm`}
               >
                 <option value="">Not specified</option>
                 {CHANGE_SURFACES.map((surface) => (
@@ -326,7 +323,7 @@ export function ChangeMarker({
             </label>
           </div>
 
-          <label className="block text-xs font-medium text-slate-700">
+          <label className="block text-sm font-medium text-ink">
             Where in the room
             <input
               type="text"
@@ -335,16 +332,16 @@ export function ChangeMarker({
               onChange={(e) => setDraft({ ...draft, location: e.target.value })}
               placeholder="wall left of the window"
               aria-invalid={errors.location ? true : undefined}
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+              className={`${controlClass} mt-1.5`}
             />
             {errors.location ? (
-              <span role="alert" className="mt-1 block text-xs font-normal text-rose-700">
+              <span role="alert" className="mt-1.5 block text-xs font-medium text-danger">
                 {errors.location}
               </span>
             ) : null}
           </label>
 
-          <label className="block text-xs font-medium text-slate-700">
+          <label className="block text-sm font-medium text-ink">
             What changed
             <textarea
               value={draft.description}
@@ -353,72 +350,68 @@ export function ChangeMarker({
               onChange={(e) => setDraft({ ...draft, description: e.target.value })}
               placeholder="Describe what is different from the move-in photograph."
               aria-invalid={errors.description ? true : undefined}
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+              className={`${controlClass} mt-1.5`}
             />
             {errors.description ? (
-              <span role="alert" className="mt-1 block text-xs font-normal text-rose-700">
+              <span role="alert" className="mt-1.5 block text-xs font-medium text-danger">
                 {errors.description}
               </span>
             ) : null}
           </label>
 
           <div className="flex gap-2">
-            <button
-              type="submit"
-              className="flex-1 rounded bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
-            >
+            <Button type="submit" className="flex-1">
               {draft.editing ? 'Save change' : 'Add change'}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              tone="secondary"
               onClick={() => {
                 setDraft(null);
                 setErrors({});
               }}
-              className="rounded border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
             >
               Cancel
-            </button>
+            </Button>
           </div>
         </form>
       ) : null}
 
       {marks.length > 0 ? (
-        <ul className="mt-4 space-y-2" data-testid="mark-list">
+        <ul className="mt-4 space-y-2.5" data-testid="mark-list">
           {marks.map((mark, index) => (
             <li
               key={mark.id}
               data-testid={`mark-${mark.id}`}
-              className="rounded-lg border border-slate-200 p-3"
+              className="rounded-xl border border-line bg-surface p-3.5 shadow-xs"
             >
-              <div className="flex items-start gap-2">
-                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded bg-amber-400 text-[10px] font-bold text-slate-900">
+              <div className="flex items-start gap-2.5">
+                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-md bg-accent text-[10px] font-bold text-white">
                   {index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-slate-900">
-                    {humanise(mark.type)}
-                    {mark.surface ? ` · ${humanise(mark.surface)}` : ''}
-                  </p>
-                  <p className="text-xs text-slate-600">{mark.location}</p>
-                  <p className="mt-1 text-sm text-slate-800">{mark.description}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-ink">
+                      {humanise(mark.type)}
+                      {mark.surface ? ` · ${humanise(mark.surface)}` : ''}
+                    </p>
+                    {/*
+                      The tenant wrote this, and the record says so. It is the
+                      same `accent` badge a saved tenant change carries on the
+                      room card, so the two read as one thing.
+                    */}
+                    <Badge tone="accent">You recorded</Badge>
+                  </div>
+                  <p className="text-xs text-ink-3">{mark.location}</p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-ink-2">{mark.description}</p>
                 </div>
               </div>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => startEdit(mark)}
-                  className="rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
-                >
+              <div className="mt-3 flex gap-2">
+                <Button tone="secondary" size="sm" onClick={() => startEdit(mark)}>
                   Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => remove(mark.id)}
-                  className="rounded border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700"
-                >
+                </Button>
+                <Button tone="danger" size="sm" onClick={() => remove(mark.id)}>
                   Delete
-                </button>
+                </Button>
               </div>
             </li>
           ))}
