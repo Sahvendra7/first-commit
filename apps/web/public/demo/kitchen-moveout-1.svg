@@ -1,34 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img">
   <defs>
-    <linearGradient id="wallg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f2eee7"/><stop offset="1" stop-color="#e8e3da"/>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f1ea"/><stop offset="1" stop-color="#e6e0d5"/>
     </linearGradient>
-    <linearGradient id="floorg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#b08a62"/><stop offset="1" stop-color="#8f6d4c"/>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b79572"/><stop offset="1" stop-color="#8f6d4c"/>
     </linearGradient>
-    <radialGradient id="daylight" cx="0.25" cy="0.3" r="0.75">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/>
+    <radialGradient id="day" cx="0.24" cy="0.22" r="0.85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.36"/>
       <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="stain" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#5a3a22" stop-opacity="0.85"/>
-      <stop offset="0.6" stop-color="#6b4a2f" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#6b4a2f" stop-opacity="0"/>
+    <radialGradient id="mark" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#5d4326" stop-opacity="0.85"/>
+      <stop offset="0.6" stop-color="#6b4d2d" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#6b4d2d" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <rect width="1280" height="720" fill="url(#wallg)"/>
-  <path d="M0 446.4 L1280.0 446.4 L1280.0 720 L0 720 Z" fill="url(#floorg)"/>
-  <line x1="0" y1="466.2" x2="1280" y2="466.2" stroke="#9a765230" stroke-width="2"/>
-  <line x1="0" y1="496.8" x2="1280" y2="496.8" stroke="#9a765230" stroke-width="2"/>
-  <line x1="0" y1="533.6" x2="1280" y2="533.6" stroke="#9a765230" stroke-width="2"/>
-  <line x1="0" y1="574.9" x2="1280" y2="574.9" stroke="#9a765230" stroke-width="2"/>
-  <line x1="0" y1="620.1" x2="1280" y2="620.1" stroke="#9a765230" stroke-width="2"/>
-  <line x1="0" y1="668.6" x2="1280" y2="668.6" stroke="#9a765230" stroke-width="2"/>
-  <rect x="0" y="421.2" width="1280" height="25.2" fill="#cfc7bb"/>
-  <rect x="128.0" y="345.6" width="844.8" height="50.4" fill="#c3ccd4"/>
-  <rect x="128.0" y="396.0" width="844.8" height="79.2" fill="#8d6e52"/>
-  <rect x="179.2" y="122.4" width="563.2" height="115.2" fill="#f7f5f1"/>
-  <rect x="1024.0" y="374.4" width="96.0" height="72.0" rx="6" fill="#8a7a66"/>
-  <text x="640" y="51.8" font-family="system-ui, sans-serif" font-size="38" fill="#5b6472" text-anchor="middle">Kitchen — Move-out — pair 1</text>
-  <text x="640" y="687.6" font-family="system-ui, sans-serif" font-size="26" fill="#7a2e2e" text-anchor="middle" font-weight="600">PLACEHOLDER — NOT A REAL PHOTOGRAPH</text>
+  <rect width="1280" height="720" fill="url(#wall)"/>
+
+  <rect y="547.2" width="1280" height="172.79999999999998" fill="url(#floor)"/>
+  <rect y="534.24" width="1280" height="12.959999999999999" fill="#d9d2c5"/>
+  <rect y="216" width="1280" height="115.2" fill="#e9eef0"/>
+  <line x1="0" y1="273.6" x2="1280" y2="273.6" stroke="#d3dade" stroke-width="3"/>
+  <rect x="76.8" y="72" width="435.20000000000005" height="129.6" fill="#e6e0d5" stroke="#d3dade" stroke-width="4"/>
+  <rect x="0" y="331.2" width="1280" height="43.199999999999996" fill="#c3c9cd"/>
+  <rect x="0" y="374.40000000000003" width="1280" height="172.79999999999998" fill="#e6e0d5"/>
+  <line x1="422.40000000000003" y1="374.40000000000003" x2="422.40000000000003" y2="547.2" stroke="#d3dade" stroke-width="3"/>
+  <line x1="844.8000000000001" y1="374.40000000000003" x2="844.8000000000001" y2="547.2" stroke="#d3dade" stroke-width="3"/>
+  <rect width="1280" height="720" fill="#fff3d6" opacity="0.22"/>
+  <rect width="1280" height="720" fill="url(#day)"/>
+
+  <g opacity="0.5">
+    <rect x="45" y="659" width="7" height="30" fill="#8a5a3c"/>
+    <text x="61" y="683"
+      font-family="system-ui, -apple-system, sans-serif" font-size="21"
+      letter-spacing="2.5" fill="#6f4a31" font-weight="600">PLACEHOLDER</text>
+    <text x="61" y="707"
+      font-family="system-ui, -apple-system, sans-serif" font-size="17"
+      letter-spacing="1.4" fill="#6f4a31">not a real photograph</text>
+  </g>
 </svg>

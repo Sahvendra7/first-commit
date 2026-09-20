@@ -42,6 +42,25 @@ export default tseslint.config(
    * `URL`. Flat config ignores `/* eslint-env *\/` comments, so the globals
    * are declared here instead — otherwise every one of them is `no-undef`.
    */
+  /*
+   * Build-time scripts under `apps/web/scripts/` run in Node, not the browser,
+   * so they get Node's globals. Same reason as the service-worker block below:
+   * flat config ignores `/* eslint-env *\/` comments.
+   */
+  {
+    name: 'handover/build-scripts',
+    files: ['apps/web/scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
+
   {
     name: 'handover/service-worker',
     files: ['apps/web/public/sw.js'],

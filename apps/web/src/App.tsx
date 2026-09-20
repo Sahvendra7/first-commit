@@ -130,7 +130,7 @@ export function App() {
   const barActions = demo ? (
     <a
       href="/"
-      className="rounded-lg px-2 py-1.5 text-sm font-medium text-ink-2 underline-offset-4 hover:bg-paper-deep hover:underline"
+      className="inline-flex min-h-[44px] items-center rounded-lg px-3 text-sm font-medium text-ink-2 underline-offset-4 hover:bg-paper-deep hover:underline"
     >
       Leave demo
     </a>

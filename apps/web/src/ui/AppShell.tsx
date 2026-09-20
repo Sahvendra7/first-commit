@@ -11,7 +11,8 @@ import { Logo } from './Logo.js';
  * measure, the record wants the full shell — and the shell takes it as a prop
  * rather than each screen inventing its own wrapper.
  *
- * The bar is sticky and translucent because the record is a long scroll and
+ * The bar is sticky and very slightly translucent because the record is a long
+ * scroll and
  * the journey stepper below it is the tenant's place-marker; losing the
  * product's name off the top of a five-screen scroll is how an app stops
  * feeling like one thing.
@@ -35,7 +36,7 @@ export interface AppShellProps {
 export function AppShell({ width = 'record', demo, barActions, children }: AppShellProps) {
   return (
     <div className="flex min-h-[100dvh] flex-col bg-paper">
-      <header className="sticky top-0 z-30 border-b border-line/80 bg-paper/85 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-line/80 bg-paper/95 backdrop-blur-md">
         <div className="mx-auto flex h-14 w-full max-w-shell items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             <Logo />

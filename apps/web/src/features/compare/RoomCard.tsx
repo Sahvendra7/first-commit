@@ -124,8 +124,17 @@ export function RoomCard({
           </p>
         ) : null}
 
+        {onSelectRoom ? (
+          <div className="mt-3">
+            <Button tone="secondary" block onClick={() => onSelectRoom(room.roomId)}>
+              {untouched ? `Add a change in ${room.roomLabel}` : `Review ${room.roomLabel}`}
+              <Arrow />
+            </Button>
+          </div>
+        ) : null}
+
         {room.changes.length > 0 ? (
-          <ul className="mt-3 space-y-2">
+          <ul className="mt-3 space-y-2 border-t border-line pt-3">
             {room.changes.map((change) => (
               <ChangeRow
                 key={change.id}
@@ -136,15 +145,6 @@ export function RoomCard({
               />
             ))}
           </ul>
-        ) : null}
-
-        {onSelectRoom ? (
-          <div className="pt-4">
-            <Button tone="secondary" block onClick={() => onSelectRoom(room.roomId)}>
-              {untouched ? `Add a change in ${room.roomLabel}` : `Review ${room.roomLabel}`}
-              <Arrow />
-            </Button>
-          </div>
         ) : null}
       </div>
     </li>
@@ -161,7 +161,7 @@ function Thumb({
   readonly label: string;
 }) {
   return (
-    <div className="relative aspect-[4/3] bg-night">
+    <div className="relative aspect-[5/4] bg-night">
       <img
         src={url}
         alt={alt}
@@ -210,7 +210,7 @@ function ChangeRow({ change, roomId, onDecideChange, deciding }: ChangeRowProps)
     <li
       data-testid={`change-${change.id}`}
       className={[
-        'rounded-xl border p-3',
+        'rounded-xl border p-2.5',
         isSuggestion ? 'border-dashed border-brand-line bg-brand-tint/50' : 'border-line bg-sunk',
       ].join(' ')}
     >
@@ -240,8 +240,8 @@ function ChangeRow({ change, roomId, onDecideChange, deciding }: ChangeRowProps)
         ) : null}
       </div>
 
-      <p className="mt-2 text-sm leading-relaxed text-ink">{change.description}</p>
-      <p className="text-xs text-ink-3">{change.location}</p>
+      <p className="mt-1.5 text-[0.8125rem] leading-snug text-ink">{change.description}</p>
+      <p className="mt-0.5 text-[0.6875rem] leading-snug text-ink-3">{change.location}</p>
 
       {/*
         Two opposed arguments, or nothing. There is no boolean here to misread
