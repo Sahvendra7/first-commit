@@ -1,31 +1,40 @@
-import type { ChangeAction, DiffChange, RoomDiffView } from '@handover/shared';
+import type { RoomDiffView } from '@handover/shared';
 import { firstMatchedPair, missingPairReason } from '../../lib/pairing.js';
-import { Badge, Button, PairGlyph } from '../../ui/index.js';
+import { Badge, PairGlyph } from '../../ui/index.js';
 
 /**
- * One room on the record: what it looks like, what is on file for it, and what
- * has been recorded against it.
+ * One room on the record — a summary, and a way in.
+ *
+ * ── What a card has to answer ───────────────────────────────────────────────
+ *
+ * What is this room? Is there evidence? Is something different? What can I do?
+ * Four questions, four lines, and then the tenant is in the room's own screen.
+ *
+ * The card used to also carry the full change list and every accept/reject
+ * control, which made it as tall as the room's history and pushed its own
+ * "review this room" button into the middle of itself. That detail now lives on
+ * the room screen, beside the comparison it is about (`ChangeReview`). Card is
+ * summary; detail is explanation.
  *
  * ── The thumbnails ──────────────────────────────────────────────────────────
  *
- * A room card without the photographs is a row in a table, and the
- * photographs are the evidence. So the card leads with the pair — but only
- * ever a pair that `firstMatchedPair` produced, which joins on `pairIndex`.
- * `before[0]` beside `after[0]` would happily put move-in corner A next to
- * move-out corner B whenever one side is missing a shot, and under a heading
- * claiming they are the same view that is a fabricated comparison, not a
- * cosmetic bug.
+ * A room card without the photographs is a row in a table, and the photographs
+ * are the evidence — so the card leads with the pair. But only ever a pair that
+ * `firstMatchedPair` produced, which joins on `pairIndex`. `before[0]` beside
+ * `after[0]` would happily put move-in corner A next to move-out corner B
+ * whenever one side is missing a shot, and under a heading claiming they are
+ * the same view that is a fabricated comparison, not a cosmetic bug.
  *
  * When there is no honest pair the card says which half is missing instead of
  * showing one photograph in a slot labelled for two.
  *
- * ── The change list ─────────────────────────────────────────────────────────
+ * ── The whole card is the control ───────────────────────────────────────────
  *
- * A tenant-authored change and a model suggestion are drawn differently and
- * counted separately, and a suggestion is labelled as one wherever it appears.
- * Nothing model-derived enters a document without an explicit `ACCEPT` — so
- * both decision buttons stay live even after a decision, because a tenant who
- * changes their mind has to be able to say so.
+ * One `button` wrapping the whole thing rather than a link buried under it:
+ * the thumbnails are the most tappable part of the card on a phone, and making
+ * them inert so that a 44px button underneath could be the target was the
+ * wrong way round. The button carries the accessible name, so the room label
+ * is not announced twice.
  */
 
 export interface RoomTally {
@@ -40,31 +49,17 @@ export interface RoomTally {
 export interface RoomCardProps {
   readonly room: RoomDiffView;
   readonly tally: RoomTally;
-  /** Copy explaining why the room is flagged, already resolved by the caller. */
-  readonly reason?: string;
   readonly onSelectRoom?: (roomId: string) => void;
-  readonly onDecideChange?: (roomId: string, changeId: string, action: ChangeAction) => void;
-  readonly deciding?: boolean;
 }
 
-export function RoomCard({
-  room,
-  tally,
-  reason,
-  onSelectRoom,
-  onDecideChange,
-  deciding,
-}: RoomCardProps) {
+export function RoomCard({ room, tally, onSelectRoom }: RoomCardProps) {
   const pair = firstMatchedPair(room);
   const missing = missingPairReason(room);
   const untouched = tally.recorded === 0 && tally.suggestions === 0;
 
-  return (
-    <li
-      data-testid={`room-${room.roomId}`}
-      className="group overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition-shadow duration-[var(--dur-2)] hover:shadow-md"
-    >
-      {/* ── The pair ──────────────────────────────────────────────────── */}
+  const body = (
+    <>
+      {/* ── The pair. The evidence leads. ─────────────────────────────── */}
       <div className="grid grid-cols-2 gap-px bg-line">
         {pair ? (
           <>
@@ -96,7 +91,7 @@ export function RoomCard({
       </div>
 
       {/* ── What is on file ───────────────────────────────────────────── */}
-      <div className="p-4">
+      <div className="flex grow flex-col p-4">
         <div className="flex items-baseline justify-between gap-2">
           <h2 className="text-heading font-semibold text-ink">{room.roomLabel}</h2>
           <span className="tnum shrink-0 text-xs text-ink-3">
@@ -110,43 +105,57 @@ export function RoomCard({
             : tally.recorded === 1
               ? '1 change recorded'
               : `${tally.recorded} changes recorded`}
-          {tally.suggestions > 0
-            ? ` · ${tally.suggestions} ${
-                tally.suggestions === 1 ? 'suggestion' : 'suggestions'
-              } to review`
-            : ''}
           {tally.rejected > 0 ? ` · ${tally.rejected} dismissed` : ''}
         </p>
 
-        {reason ? (
-          <p className="mt-1.5 text-xs leading-relaxed text-ink-3" data-testid={`reason-${room.roomId}`}>
-            {reason}
+        {/*
+          A count, not a queue. The queue itself — with its controls and its
+          explanation — is on the room's own screen.
+        */}
+        {tally.suggestions > 0 ? (
+          <p className="mt-2.5">
+            <Badge tone="warn" dot data-testid={`pending-${room.roomId}`}>
+              {tally.suggestions === 1
+                ? '1 change to review'
+                : `${tally.suggestions} changes to review`}
+            </Badge>
           </p>
         ) : null}
 
         {onSelectRoom ? (
-          <div className="mt-3">
-            <Button tone="secondary" block onClick={() => onSelectRoom(room.roomId)}>
-              {untouched ? `Add a change in ${room.roomLabel}` : `Review ${room.roomLabel}`}
-              <Arrow />
-            </Button>
-          </div>
-        ) : null}
-
-        {room.changes.length > 0 ? (
-          <ul className="mt-3 space-y-2 border-t border-line pt-3">
-            {room.changes.map((change) => (
-              <ChangeRow
-                key={change.id}
-                change={change}
-                roomId={room.roomId}
-                {...(onDecideChange ? { onDecideChange } : {})}
-                {...(deciding === undefined ? {} : { deciding })}
-              />
-            ))}
-          </ul>
+          <span
+            aria-hidden="true"
+            className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-hi"
+          >
+            {untouched ? `Open ${room.roomLabel}` : `Review ${room.roomLabel}`}
+            <Arrow />
+          </span>
         ) : null}
       </div>
+    </>
+  );
+
+  const shell =
+    'group flex h-full w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface text-left shadow-sm transition-[box-shadow,transform,border-color] duration-[var(--dur-2)]';
+
+  return (
+    <li data-testid={`room-${room.roomId}`} className="flex">
+      {onSelectRoom ? (
+        <button
+          type="button"
+          onClick={() => onSelectRoom(room.roomId)}
+          aria-label={
+            untouched
+              ? `Open ${room.roomLabel}`
+              : `Review ${room.roomLabel}, ${tally.recorded} recorded, ${tally.suggestions} to review`
+          }
+          className={`${shell} hover:-translate-y-0.5 hover:border-line-strong hover:shadow-md active:translate-y-0`}
+        >
+          {body}
+        </button>
+      ) : (
+        <div className={shell}>{body}</div>
+      )}
     </li>
   );
 }
@@ -161,7 +170,7 @@ function Thumb({
   readonly label: string;
 }) {
   return (
-    <div className="relative aspect-[5/4] bg-night">
+    <div className="relative aspect-[5/4] overflow-hidden bg-night">
       <img
         src={url}
         alt={alt}
@@ -169,7 +178,7 @@ function Thumb({
         // is above the fold on a phone.
         loading="lazy"
         decoding="async"
-        className="h-full w-full object-cover"
+        className="h-full w-full object-cover transition-transform duration-[var(--dur-3)] ease-[var(--ease)] group-hover:scale-[1.03]"
       />
       <span className="absolute left-1.5 top-1.5 rounded-full bg-night/75 px-1.5 py-0.5 text-[0.5625rem] font-semibold uppercase tracking-[0.08em] text-white backdrop-blur-sm">
         {label}
@@ -194,140 +203,5 @@ function Arrow() {
         strokeLinejoin="round"
       />
     </svg>
-  );
-}
-
-interface ChangeRowProps {
-  readonly change: DiffChange;
-  readonly roomId: string;
-  readonly onDecideChange?: (roomId: string, changeId: string, action: ChangeAction) => void;
-  readonly deciding?: boolean;
-}
-
-function ChangeRow({ change, roomId, onDecideChange, deciding }: ChangeRowProps) {
-  const isSuggestion = change.source === 'MODEL';
-  return (
-    <li
-      data-testid={`change-${change.id}`}
-      className={[
-        'rounded-xl border p-2.5',
-        isSuggestion ? 'border-dashed border-brand-line bg-brand-tint/50' : 'border-line bg-sunk',
-      ].join(' ')}
-    >
-      <div className="flex flex-wrap items-center gap-1.5">
-        {isSuggestion ? (
-          <Badge tone="brand" data-testid={`suggestion-label-${change.id}`}>
-            Suggestion
-          </Badge>
-        ) : (
-          <Badge tone="accent">You recorded</Badge>
-        )}
-        {change.tenantAction ? (
-          <Badge tone={change.tenantAction === 'ACCEPT' ? 'ok' : 'neutral'}>
-            {change.tenantAction === 'ACCEPT' ? 'Included' : 'Dismissed'}
-          </Badge>
-        ) : (
-          <Badge tone="warn">Not yet decided</Badge>
-        )}
-        {/*
-          Model-reported and decorative. Displayed beside a suggestion, never
-          arithmetic and never a claim the document makes.
-        */}
-        {isSuggestion ? (
-          <span className="tnum text-[0.6875rem] text-ink-3" data-testid={`confidence-${change.id}`}>
-            model confidence {change.confidence.toFixed(2)}
-          </span>
-        ) : null}
-      </div>
-
-      <p className="mt-1.5 text-[0.8125rem] leading-snug text-ink">{change.description}</p>
-      <p className="mt-0.5 text-[0.6875rem] leading-snug text-ink-3">{change.location}</p>
-
-      {/*
-        Two opposed arguments, or nothing. There is no boolean here to misread
-        as a verdict.
-
-        Behind a disclosure because it is long and it is secondary — four rooms
-        of these turned the record screen into a wall of legal argument, with
-        the tenant's actual decision buttons pushed off the bottom of it. Both
-        sides are still in the markup and still render together; collapsing
-        them does not make either one the answer.
-      */}
-      {change.wearAndTear ? (
-        <details className="group/wear mt-2">
-          <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-lg py-1 text-[0.6875rem] font-semibold text-ink-3 hover:text-ink-2">
-            <svg
-              viewBox="0 0 12 12"
-              className="h-2.5 w-2.5 transition-transform duration-[var(--dur-1)] group-open/wear:rotate-90"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="m4 2 4 4-4 4"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            How this is usually argued
-          </summary>
-          <dl
-            data-testid={`wear-${change.id}`}
-            className="mt-1.5 space-y-1 border-l-2 border-line-strong pl-2.5 text-[0.6875rem] leading-relaxed text-ink-3"
-          >
-            <div>
-              <dt className="inline font-semibold">A landlord may argue: </dt>
-              <dd className="inline">{change.wearAndTear.landlordMayArgue}</dd>
-            </div>
-            <div>
-              <dt className="inline font-semibold">Tenants typically counter: </dt>
-              <dd className="inline">{change.wearAndTear.tenantsTypicallyCounter}</dd>
-            </div>
-          </dl>
-        </details>
-      ) : null}
-
-      {/*
-        §9.7: "the tenant must affirmatively accept each change." Nothing
-        model-derived reaches a PDF without a press here, so the control is
-        always offered — including for a decision already made.
-
-        Both buttons stay enabled after a decision so the current state is
-        shown by `aria-pressed`, not by a disabled control a screen reader
-        would skip.
-      */}
-      {onDecideChange ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button
-            size="sm"
-            tone={change.tenantAction === 'ACCEPT' ? 'primary' : 'secondary'}
-            data-testid={`accept-${change.id}`}
-            aria-pressed={change.tenantAction === 'ACCEPT'}
-            {...(deciding === undefined ? {} : { disabled: deciding })}
-            onClick={() => onDecideChange(roomId, change.id, 'ACCEPT')}
-          >
-            {/*
-              Not the word the badge above uses. `Included` appears there as
-              state; repeating it on the control would make the two
-              indistinguishable to anything querying by text, a reader
-              included.
-            */}
-            {change.tenantAction === 'ACCEPT' ? 'Included in the record' : 'Include this'}
-          </Button>
-          <Button
-            size="sm"
-            tone="secondary"
-            data-testid={`reject-${change.id}`}
-            aria-pressed={change.tenantAction === 'REJECT'}
-            {...(deciding === undefined ? {} : { disabled: deciding })}
-            onClick={() => onDecideChange(roomId, change.id, 'REJECT')}
-            className={change.tenantAction === 'REJECT' ? '!border-ink !bg-ink !text-white' : ''}
-          >
-            {change.tenantAction === 'REJECT' ? 'Left out' : 'Leave this out'}
-          </Button>
-        </div>
-      ) : null}
-    </li>
   );
 }

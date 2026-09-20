@@ -76,16 +76,16 @@ describe('ConditionSummary — the flag-off default is the normal path', () => {
     expect(screen.queryByTestId('attention-banner')).toBeNull();
   });
 
-  it('writes AI_DISABLED copy that invites input rather than reporting a failure', () => {
+  it('leaves the per-room explanation to the room screen', () => {
+    // The reason copy is an explanation, and `ChangeReview` is where there is
+    // room for one. A card that carried it grew a paragraph per room.
     renderSummary();
-    const reason = screen.getByTestId(`reason-${FLAG_OFF_ROOMS[0]!.roomId}`);
-    expect(reason.textContent).toContain('Add anything you can see');
-    expect(reason.textContent).not.toMatch(/unavailable|failed|error/i);
+    expect(screen.queryByTestId(`reason-${FLAG_OFF_ROOMS[0]!.roomId}`)).toBeNull();
   });
 
-  it('invites a first change rather than offering a review of nothing', () => {
+  it('invites a first visit rather than offering a review of nothing', () => {
     renderSummary({ onSelectRoom: vi.fn() });
-    expect(screen.getByRole('button', { name: /Add a change in Living Room/ })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Open Living Room/ })).toBeDefined();
   });
 
   it('counts photo pairs, so the ledger is visible with zero changes', () => {
@@ -102,24 +102,16 @@ describe('ConditionSummary — review reasons other than AI_DISABLED', () => {
     expect(screen.getByTestId('attention-banner').textContent).toContain('1 room needs');
   });
 
-  it('writes distinct copy per reason', () => {
-    const roomId = FLAG_OFF_ROOMS[0]!.roomId;
-
-    const { unmount } = renderSummary({
-      rooms: [roomWith([], { reviewReason: 'MODEL_ERROR' })],
+  it('counts flagged rooms rather than explaining each one', () => {
+    renderSummary({
+      rooms: [
+        roomWith([], { reviewReason: 'MODEL_ERROR' }),
+        roomWith([], { reviewReason: 'LOW_CONFIDENCE', roomId: 'rm_2' }),
+        ...FLAG_OFF_ROOMS.slice(1),
+      ],
     });
-    expect(screen.getByTestId(`reason-${roomId}`).textContent).toContain('did not run');
-    unmount();
-
-    renderSummary({ rooms: [roomWith([], { reviewReason: 'MISSING_PAIR' })] });
-    expect(screen.getByTestId(`reason-${roomId}`).textContent).toContain(
-      'no matching pair of photographs',
-    );
-  });
-
-  it('says the evidence is unaffected when the comparison failed', () => {
-    renderSummary({ rooms: [roomWith([], { reviewReason: 'MODEL_ERROR' })] });
-    expect(screen.getByText(/photographs and their timestamps are unaffected/)).toBeDefined();
+    // The count is this screen's job; the wording per reason is ChangeReview's.
+    expect(screen.getByTestId('attention-banner').textContent).toContain('2 rooms need');
   });
 
   it('flags a room with no before-and-after pair', () => {
@@ -134,27 +126,21 @@ describe('ConditionSummary — a suggestion is never a finding', () => {
     renderSummary({ rooms: [roomWith([MODEL_CHANGE, TENANT_CHANGE])] });
 
     expect(screen.getByTestId(`count-${roomId}`).textContent).toContain('1 change recorded');
-    expect(screen.getByTestId(`count-${roomId}`).textContent).toContain('1 suggestion to review');
+    expect(screen.getByTestId(`pending-${roomId}`).textContent).toContain('1 change to review');
     // The undecided suggestion is not in the recorded total.
     expect(screen.getByTestId('total-recorded').textContent).toBe('1');
   });
 
-  it('labels a model change as a suggestion', () => {
-    renderSummary({ rooms: [roomWith([MODEL_CHANGE])] });
-    expect(screen.getByTestId('suggestion-label-chg_model_1').textContent).toBe('Suggestion');
-    expect(screen.getByText('Not yet decided')).toBeDefined();
-  });
-
-  it('styles a suggestion differently from a recorded change', () => {
+  it('renders no change entry at all — the card is a count, not a list', () => {
     renderSummary({ rooms: [roomWith([MODEL_CHANGE, TENANT_CHANGE])] });
-    expect(screen.getByTestId('change-chg_model_1').className).toContain('border-dashed');
-    expect(screen.getByTestId('change-chg_tenant_1').className).not.toContain('border-dashed');
+    expect(screen.queryByTestId('change-chg_model_1')).toBeNull();
+    expect(screen.queryByTestId('suggestion-label-chg_model_1')).toBeNull();
   });
 
   it('says nothing suggested is included until it is accepted', () => {
     renderSummary({ rooms: [roomWith([MODEL_CHANGE])] });
     expect(screen.getByTestId('suggestions-banner').textContent).toContain(
-      'Nothing suggested is included until you accept it',
+      'Nothing is included until you accept it',
     );
   });
 
@@ -163,7 +149,7 @@ describe('ConditionSummary — a suggestion is never a finding', () => {
       rooms: [roomWith([{ ...MODEL_CHANGE, tenantAction: 'ACCEPT' }])],
     });
     expect(screen.getByTestId('total-recorded').textContent).toBe('1');
-    expect(screen.getByText('Included')).toBeDefined();
+    expect(screen.queryByTestId('suggestions-banner')).toBeNull();
   });
 
   it('keeps a rejected change on the record without counting it', () => {
@@ -173,7 +159,7 @@ describe('ConditionSummary — a suggestion is never a finding', () => {
     });
     expect(screen.getByTestId('total-recorded').textContent).toBe('0');
     expect(screen.getByTestId(`count-${roomId}`).textContent).toContain('1 dismissed');
-    expect(screen.getByTestId('change-chg_model_1')).toBeDefined();
+    expect(screen.queryByTestId(`pending-${roomId}`)).toBeNull();
   });
 
   it('shows no suggestions banner when there are none', () => {
@@ -182,38 +168,26 @@ describe('ConditionSummary — a suggestion is never a finding', () => {
   });
 });
 
-describe('ConditionSummary — confidence is decoration', () => {
-  it('displays model confidence beside a suggestion', () => {
-    renderSummary({ rooms: [roomWith([MODEL_CHANGE])] });
-    expect(screen.getByTestId('confidence-chg_model_1').textContent).toContain('0.82');
-  });
-
-  it('never attaches a confidence figure to a tenant-authored change', () => {
-    renderSummary({ rooms: [roomWith([TENANT_CHANGE])] });
-    expect(screen.queryByTestId('confidence-chg_tenant_1')).toBeNull();
-  });
-
-  it('shows no aggregate confidence anywhere — it is never arithmetic', () => {
+describe('ConditionSummary — confidence is never arithmetic', () => {
+  it('shows no confidence figure of any kind on this screen', () => {
     const second: DiffChange = { ...MODEL_CHANGE, id: 'chg_model_2', confidence: 0.4 };
     const { container } = renderSummary({ rooms: [roomWith([MODEL_CHANGE, second])] });
-    // 0.82 and 0.40 appear; no mean, sum or percentage of them does.
-    expect(container.textContent).toContain('0.82');
-    expect(container.textContent).toContain('0.40');
-    expect(container.textContent).not.toMatch(/61%|0\.61|average confidence/i);
+
+    // Per-change confidence is `ChangeReview`'s, beside the change it describes.
+    // Here there is neither an individual figure nor — which would be far
+    // worse — a mean, a sum or a percentage of them.
+    expect(container.textContent).not.toContain('0.82');
+    expect(container.textContent).not.toMatch(/61%|0\.61|average confidence|confidence/i);
   });
 });
 
 describe('ConditionSummary — wear and tear is never a verdict', () => {
-  it('renders both opposed arguments', () => {
-    renderSummary({ rooms: [roomWith([MODEL_CHANGE])] });
-    const wear = screen.getByTestId('wear-chg_model_1');
-    expect(wear.textContent).toContain('A landlord may argue');
-    expect(wear.textContent).toContain('Tenants typically counter');
-  });
-
-  it('renders nothing when the note is absent, rather than half of it', () => {
-    renderSummary({ rooms: [roomWith([TENANT_CHANGE])] });
-    expect(screen.queryByTestId('wear-chg_tenant_1')).toBeNull();
+  it('renders no wear-and-tear argument on a card, in either direction', () => {
+    // Both sides render together or not at all, and this screen is not where
+    // they render. Half an argument on a card would be the failure mode.
+    const { container } = renderSummary({ rooms: [roomWith([MODEL_CHANGE])] });
+    expect(screen.queryByTestId('wear-chg_model_1')).toBeNull();
+    expect(container.textContent).not.toMatch(/a landlord may argue|tenants typically counter/i);
   });
 });
 

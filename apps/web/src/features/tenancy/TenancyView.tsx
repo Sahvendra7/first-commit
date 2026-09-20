@@ -18,6 +18,7 @@ import { PropertyRecord } from './PropertyRecord.js';
 import { CompareSlider } from '../compare/CompareSlider.js';
 import { ChangeMarker } from '../compare/ChangeMarker.js';
 import { ConditionSummary } from '../compare/ConditionSummary.js';
+import { ChangeReview, REVIEW_REASON_COPY } from '../compare/ChangeReview.js';
 import { RoomCapture } from '../capture/RoomCapture.js';
 import { Recovery } from '../claim/Recovery.js';
 import { Badge, Banner, Button, EmptyState, PairGlyph, Section } from '../../ui/index.js';
@@ -503,6 +504,23 @@ export function TenancyView({
           )}
         </Section>
 
+        {/*
+          The decision, directly under the evidence it is about.
+          `onDecideChange` still carries `(roomId, changeId, action)` to the
+          same PATCH; only the screen it is rendered on changed.
+        */}
+        <div className="rule-soft" role="presentation" />
+
+        <ChangeReview
+          room={room}
+          {...(room.reviewReason ? { reason: REVIEW_REASON_COPY[room.reviewReason] } : {})}
+          onDecideChange={(r, c, a) => void decideChange(r, c, a)}
+          deciding={deciding}
+          className="max-w-4xl"
+        />
+
+        <div className="rule-soft" role="presentation" />
+
         <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
           <RoomCapture
             api={api}
@@ -615,8 +633,6 @@ export function TenancyView({
         phase={phase}
         documents={tenancy.documents}
         onSelectRoom={setRoomId}
-        onDecideChange={(r, c, a) => void decideChange(r, c, a)}
-        deciding={deciding}
         onGenerateReport={() => void closePhase()}
         /*
          * Only ever the server's own job record. The previous version

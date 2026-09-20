@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import {
   formatRupees,
-  type ChangeAction,
   type DocumentRef,
   type JobStatusResponse,
   type Phase,
@@ -22,18 +21,21 @@ import { RoomCard, type RoomTally } from './RoomCard.js';
  *   nonsense. Rooms with `reviewReason: 'AI_DISABLED'` are simply presented for
  *   annotation; a banner appears only for rooms flagged for some *other*
  *   reason, which is a real anomaly worth surfacing.
- * - **A model change is never rendered as a finding.** Where suggestions exist
- *   they are visually distinct, labelled as suggestions, and counted
- *   separately from what the tenant has recorded. Nothing model-derived enters
- *   a document without an explicit `ACCEPT`.
- * - **`confidence` is decoration.** It is displayed beside a suggestion and is
- *   never summed, averaged, thresholded, or presented as a percentage of
- *   anything the document asserts.
- * - **`wearAndTear` is two opposed arguments, never a verdict.** Both sides
- *   render or neither does — there is no boolean to misread.
+ * - **A model change is never rendered as a finding.** Suggestions are counted
+ *   separately from what the tenant has recorded and are never added into the
+ *   headline "changes recorded" figure. Nothing model-derived enters a document
+ *   without an explicit `ACCEPT`.
  * - The claim is **tamper-evidence**, not legal admissibility, and no number
  *   on this screen is computed here: the shortfall and the statutory interest
  *   are the domain's, and the report's contents are the report's.
+ *
+ * ── What this screen is not ─────────────────────────────────────────────────
+ *
+ * It is not where a change is decided. Accept and reject used to live on the
+ * room cards here, one navigation away from the photographs they describe, and
+ * the cards grew to whatever height their change lists needed. The decision now
+ * happens in `ChangeReview` on the room's own screen, directly under the
+ * comparison. This screen counts and routes; it does not explain.
  *
  * ── Layout ──────────────────────────────────────────────────────────────────
  *
@@ -54,18 +56,6 @@ export interface ConditionSummaryProps {
   /** In-flight report job, so the progress bar is real rather than a spinner. */
   readonly job?: JobStatusResponse;
   /**
-   * Records the tenant's disposition of one change. Wired to
-   * `PATCH /v1/tenancies/{id}/diff/{roomId}`; absent when the screen is
-   * read-only, which is what hides the controls entirely.
-   */
-  readonly onDecideChange?: (
-    roomId: string,
-    changeId: string,
-    action: ChangeAction,
-  ) => void;
-  /** True while a decision is being saved, so the controls cannot be double-fired. */
-  readonly deciding?: boolean;
-  /**
    * True while a request is in flight that has not yet produced a job record —
    * the gap between tapping "Generate" and the server answering with a job id.
    * It disables the button without drawing a progress bar, because there is no
@@ -81,23 +71,6 @@ export interface ConditionSummaryProps {
   readonly showHeader?: boolean;
   readonly className?: string;
 }
-
-/**
- * Copy per `reviewReason`. `AI_DISABLED` is the default path and must not read
- * like a failure — closer to "add anything you see" than "analysis
- * unavailable".
- */
-const REVIEW_REASON_COPY: Record<NonNullable<RoomDiffView['reviewReason']>, string> = {
-  AI_DISABLED: 'Add anything you can see that has changed since move-in.',
-  MODEL_ERROR:
-    'The automatic comparison did not run for this room. Your photographs and their timestamps are unaffected — add anything you can see.',
-  SCHEMA_INVALID:
-    'The automatic comparison returned something unusable for this room. Your photographs and their timestamps are unaffected — add anything you can see.',
-  LOW_CONFIDENCE:
-    'The automatic comparison was unclear about this room. Check it yourself and record what you find.',
-  MISSING_PAIR:
-    'This room has no matching pair of photographs yet, so there is nothing to compare. Capture the missing phase.',
-};
 
 function tally(room: RoomDiffView): RoomTally {
   let recorded = 0;
@@ -132,8 +105,6 @@ export function ConditionSummary({
   documents,
   onSelectRoom,
   onGenerateReport,
-  onDecideChange,
-  deciding,
   job,
   busy,
   showHeader = true,
@@ -208,21 +179,22 @@ export function ConditionSummary({
             {totalSuggestions > 0 ? (
               <Banner role="status" tone="brand" data-testid="suggestions-banner">
                 {totalSuggestions === 1
-                  ? '1 automatic suggestion is waiting for your decision.'
-                  : `${totalSuggestions} automatic suggestions are waiting for your decision.`}{' '}
-                Nothing suggested is included until you accept it.
+                  ? '1 possible change is waiting for your decision.'
+                  : `${totalSuggestions} possible changes are waiting for your decision.`}{' '}
+                Open a room to see it beside the photographs. Nothing is included until you
+                accept it.
               </Banner>
             ) : null}
           </div>
 
           {/*
-            `items-start` rather than stretched rows: a room with three
-            suggestions on it and a room with none differ by 400px, and
-            aligning their action buttons leaves a void the size of a card
-            under the shorter one. Ragged bottoms are the lesser cost.
+            Rows stretch now that a card is a fixed-shape summary rather than a
+            container for a change list of arbitrary length. Before the review
+            moved to the room screen, a room with three suggestions and a room
+            with none differed by 400px and `items-start` was the lesser evil.
           */}
           <ul
-            className="mt-5 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
+            className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
             data-testid="room-list"
           >
             {tallies.map(([room, t]) => (
@@ -230,10 +202,7 @@ export function ConditionSummary({
                 key={room.roomId}
                 room={room}
                 tally={t}
-                {...(room.reviewReason ? { reason: REVIEW_REASON_COPY[room.reviewReason] } : {})}
                 {...(onSelectRoom ? { onSelectRoom } : {})}
-                {...(onDecideChange ? { onDecideChange } : {})}
-                {...(deciding === undefined ? {} : { deciding })}
               />
             ))}
           </ul>
