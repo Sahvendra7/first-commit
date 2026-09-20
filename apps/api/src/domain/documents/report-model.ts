@@ -181,7 +181,7 @@ export function recordRefFor(
 
 /* ── Assembly ──────────────────────────────────────────────────────────────── */
 
-function toReportPhoto(photo: PhotoItem): ReportPhoto {
+export function toReportPhoto(photo: PhotoItem): ReportPhoto {
   return {
     photoId: photo.photoId,
     phase: photo.phase,
@@ -201,7 +201,7 @@ function toReportPhoto(photo: PhotoItem): ReportPhoto {
  * Note the `confidence` field's absence from the result: it is not copied and
  * then hidden, it never enters the document model at all (§9.2).
  */
-function toRecordedChanges(changes: readonly DiffChange[]): RecordedChange[] {
+export function toRecordedChanges(changes: readonly DiffChange[]): RecordedChange[] {
   return changes
     .filter((change) => change.tenantAction === 'ACCEPT')
     .map((change) => ({
