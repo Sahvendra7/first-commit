@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import {
   formatRupees,
+  type ChangeAction,
   type DocumentRef,
   type JobStatusResponse,
   type Phase,
@@ -43,6 +44,18 @@ export interface ConditionSummaryProps {
   readonly onGenerateReport?: () => void;
   /** In-flight report job, so the progress bar is real rather than a spinner. */
   readonly job?: JobStatusResponse;
+  /**
+   * Records the tenant's disposition of one change. Wired to
+   * `PATCH /v1/tenancies/{id}/diff/{roomId}`; absent when the screen is
+   * read-only, which is what hides the controls entirely.
+   */
+  readonly onDecideChange?: (
+    roomId: string,
+    changeId: string,
+    action: ChangeAction,
+  ) => void;
+  /** True while a decision is being saved, so the controls cannot be double-fired. */
+  readonly deciding?: boolean;
   /**
    * True while a request is in flight that has not yet produced a job record —
    * the gap between tapping "Generate" and the server answering with a job id.
@@ -106,6 +119,8 @@ export function ConditionSummary({
   documents,
   onSelectRoom,
   onGenerateReport,
+  onDecideChange,
+  deciding,
   job,
   busy,
   className,
@@ -319,6 +334,52 @@ export function ConditionSummary({
                             </dd>
                           </div>
                         </dl>
+                      ) : null}
+
+                      {/*
+                        §9.7: "the tenant must affirmatively accept each
+                        change." Nothing model-derived reaches a PDF without a
+                        press here, so the control is always offered — including
+                        for a decision already made, because a tenant who
+                        changes their mind must be able to say so.
+
+                        Both buttons stay enabled after a decision so the
+                        current state is shown by `aria-pressed`, not by a
+                        disabled control a screen reader would skip.
+                      */}
+                      {onDecideChange ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            data-testid={`accept-${change.id}`}
+                            aria-pressed={change.tenantAction === 'ACCEPT'}
+                            disabled={deciding}
+                            onClick={() => onDecideChange(room.roomId, change.id, 'ACCEPT')}
+                            className={`min-h-11 flex-1 rounded border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                              change.tenantAction === 'ACCEPT'
+                                ? 'border-emerald-600 bg-emerald-600 text-white'
+                                : 'border-slate-300 bg-white text-slate-800'
+                            }`}
+                          >
+                            {change.tenantAction === 'ACCEPT'
+                              ? 'Included in the record'
+                              : 'Include this'}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`reject-${change.id}`}
+                            aria-pressed={change.tenantAction === 'REJECT'}
+                            disabled={deciding}
+                            onClick={() => onDecideChange(room.roomId, change.id, 'REJECT')}
+                            className={`min-h-11 flex-1 rounded border px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                              change.tenantAction === 'REJECT'
+                                ? 'border-slate-700 bg-slate-700 text-white'
+                                : 'border-slate-300 bg-white text-slate-800'
+                            }`}
+                          >
+                            {change.tenantAction === 'REJECT' ? 'Left out' : 'Leave this out'}
+                          </button>
+                        </div>
                       ) : null}
                     </li>
                   );

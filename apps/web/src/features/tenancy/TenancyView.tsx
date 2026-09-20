@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
+  ChangeAction,
   GetDiffResponse,
   GetTenancyResponse,
   Phase,
@@ -51,6 +52,8 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
   const [capture, setCapture] = useState<CaptureState>({ kind: 'IDLE' });
   /** The report/diff job started by closing a phase, while it is being watched. */
   const [reportJobId, setReportJobId] = useState<string>();
+  /** True while a change decision is being saved. */
+  const [deciding, setDeciding] = useState(false);
 
   const load = useCallback(async () => {
     setError(undefined);
@@ -181,6 +184,42 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
       setCapture({ kind: 'IDLE' });
     }
   }, [api, phase, tenancy, tenancyId]);
+
+  /**
+   * Records the tenant's disposition of one change (§7 PATCH, §9.7).
+   *
+   * Sent one change at a time rather than batched at the end, so a decision is
+   * durable the moment it is made. `additions` is empty here: this endpoint
+   * carries both, and sending the on-screen marks again would duplicate them.
+   */
+  const decideChange = useCallback(
+    async (targetRoomId: string, changeId: string, action: ChangeAction) => {
+      setDeciding(true);
+      setError(undefined);
+      try {
+        await api.patchRoomDiff(tenancyId, targetRoomId, {
+          changes: [{ id: changeId, action }],
+          additions: [],
+        });
+        await load();
+      } catch (caught) {
+        setError(
+          isRouteNotDeployed(caught)
+            ? {
+                title: 'Recording that decision is not available yet',
+                detail:
+                  'This deployment does not yet accept decisions on changes. Your photographs and their timestamps are unaffected.',
+                retryable: false,
+                requiresSignIn: false,
+              }
+            : toUserFacingError(caught),
+        );
+      } finally {
+        setDeciding(false);
+      }
+    },
+    [api, load, tenancyId],
+  );
 
   const saveMarks = useCallback(async () => {
     if (!room || marks.length === 0) return;
@@ -425,6 +464,8 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
         phase={phase}
         documents={tenancy.documents}
         onSelectRoom={setRoomId}
+        onDecideChange={(r, c, a) => void decideChange(r, c, a)}
+        deciding={deciding}
         onGenerateReport={() => void closePhase()}
         /*
          * Only ever the server's own job record. The previous version
