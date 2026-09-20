@@ -194,7 +194,7 @@ export function ConditionSummary({
             with none differed by 400px and `items-start` was the lesser evil.
           */}
           <ul
-            className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
+            className="stagger mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
             data-testid="room-list"
           >
             {tallies.map(([room, t]) => (

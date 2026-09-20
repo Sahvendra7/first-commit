@@ -165,6 +165,14 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
+      /*
+       * Delays too. Collapsing only the *duration* leaves a staggered list
+       * still waiting out its delay with `animation-fill-mode: both` holding
+       * it at `opacity: 0` — so the eighth room card is invisible for a third
+       * of a second on exactly the setting that asked for less of this.
+       */
+      animation-delay: 0ms !important;
+      transition-delay: 0ms !important;
     }
   }
 }
@@ -190,6 +198,88 @@
     to {
       opacity: 1;
       transform: none;
+    }
+  }
+
+  /*
+   * A list that arrives in sequence rather than all at once — the room cards,
+   * the changes under a comparison.
+   *
+   * The delay is per position via `nth-child` rather than an inline
+   * `--i` on every child, so a caller adds one class to the list and nothing
+   * to the items. It stops at eight: past that the last item waits longer than
+   * anyone will watch, and the whole effect should be over inside ~half a
+   * second regardless of length.
+   */
+  .stagger > * {
+    animation: enter var(--dur-3) var(--ease) both;
+  }
+
+  .stagger > *:nth-child(2) {
+    animation-delay: 45ms;
+  }
+  .stagger > *:nth-child(3) {
+    animation-delay: 90ms;
+  }
+  .stagger > *:nth-child(4) {
+    animation-delay: 135ms;
+  }
+  .stagger > *:nth-child(5) {
+    animation-delay: 180ms;
+  }
+  .stagger > *:nth-child(6) {
+    animation-delay: 225ms;
+  }
+  .stagger > *:nth-child(7) {
+    animation-delay: 270ms;
+  }
+  .stagger > *:nth-child(n + 8) {
+    animation-delay: 315ms;
+  }
+
+  /*
+   * Acknowledgement. Used where a state the tenant just caused has changed —
+   * a decision recorded, a document that has become ready. Re-fired by giving
+   * the element a `key` that changes with the state, which restarts the
+   * animation without a timer or a piece of state to clear up.
+   */
+  .pop {
+    animation: pop var(--dur-2) var(--ease) both;
+  }
+
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /*
+   * One ring, once, when the record moves to a new stage. Keyed on the stage
+   * index so it fires on the change and never on a re-render — and it is a
+   * single iteration, not a loop: nothing in this app pulses forever to get
+   * attention it has not earned.
+   *
+   * Deliberately **no fill mode**. This animates `box-shadow`, and Tailwind's
+   * `ring-*` is also a `box-shadow`; holding the final frame would leave the
+   * node permanently wearing a transparent shadow with its actual ring
+   * overwritten. Without a fill the property reverts to the class the moment
+   * the animation ends, so the ring comes back.
+   */
+  .ring-once {
+    animation: ring-once 900ms var(--ease) 1;
+  }
+
+  @keyframes ring-once {
+    from {
+      box-shadow: 0 0 0 0 rgb(var(--c-brand) / 0.38);
+    }
+    to {
+      box-shadow: 0 0 0 14px rgb(var(--c-brand) / 0);
     }
   }
 

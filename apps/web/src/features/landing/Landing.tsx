@@ -31,26 +31,44 @@ export interface LandingProps {
   readonly demo?: boolean;
 }
 
+/**
+ * The four steps, each with a drawing of what it produces.
+ *
+ * The glyphs are diagrams, not icons: a frame with a shutter on it, two frames
+ * split by a divider, a frame with a marked region, a sheet with a seal. Read
+ * left to right they are the product — a photograph becomes a pair, a pair
+ * becomes a decision, a decision becomes a document — which is the one thing a
+ * first-time visitor has to understand and which four paragraphs of text were
+ * asking them to assemble for themselves.
+ *
+ * They are deliberately abstract. A stock interior here would be decoration,
+ * and a fixture photograph would imply the landing page is showing someone's
+ * evidence.
+ */
 const STEPS = [
   {
     id: 'capture',
     title: 'Capture',
     body: 'Walk each room at move-in and photograph it. Every shot is hashed and stamped with the server clock as it arrives.',
+    glyph: <CaptureGlyph />,
   },
   {
     id: 'compare',
     title: 'Compare',
     body: 'At move-out, take the same views again. Handover pairs them so you are always looking at like for like.',
+    glyph: <CompareGlyph />,
   },
   {
     id: 'review',
     title: 'Review',
     body: 'Record what actually changed, in your own words. Nothing enters your record unless you put it there.',
+    glyph: <ReviewGlyph />,
   },
   {
     id: 'recover',
     title: 'Recover',
     body: 'If the deposit is withheld, turn the record into a dated demand letter with your evidence attached.',
+    glyph: <RecoverGlyph />,
   },
 ] as const;
 
@@ -159,19 +177,65 @@ export function Landing({
 
       {/* ── How it works ─────────────────────────────────────────────────── */}
       <section id="how-it-works" className="mx-auto w-full max-w-shell px-4 py-14 sm:px-6 sm:py-20">
-        <p className="text-micro font-semibold uppercase text-ink-3">How it works</p>
-        <h2 className="mt-2 max-w-[22ch] font-display text-title text-ink">
-          Four steps, spread across a tenancy.
-        </h2>
+        {/*
+          The heading and its one line of context share the band. On its own,
+          a two-line serif heading left a third of a 1,152px row empty and the
+          section read as unfinished rather than as spacious.
+        */}
+        <div className="gap-x-10 gap-y-3 md:flex md:items-end md:justify-between">
+          <div>
+            <p className="text-micro font-semibold uppercase text-ink-3">How it works</p>
+            <h2 className="mt-2 max-w-[22ch] font-display text-title text-ink">
+              Four steps, spread across a tenancy.
+            </h2>
+          </div>
+          <p className="max-w-measure text-sm leading-relaxed text-ink-2 md:pb-1.5 md:text-right">
+            Two of them happen on the day you move, one takes a few minutes at the end, and
+            the fourth only if you need it.
+          </p>
+        </div>
 
+        {/*
+          One joined band rather than four separate cards: the band is itself
+          the sequence, and the chevron between cells says which way it runs.
+          Four bordered cards would have said "four features".
+        */}
         <ol className="mt-8 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((step, i) => (
-            <li key={step.id} className="bg-surface p-5">
-              <span className="tnum text-micro font-semibold uppercase text-brand">
+            <li key={step.id} className="relative bg-surface p-5">
+              <div className="text-brand">{step.glyph}</div>
+
+              <span className="tnum mt-4 block text-micro font-semibold uppercase text-brand">
                 {String(i + 1).padStart(2, '0')}
               </span>
-              <h3 className="mt-2 text-heading font-semibold text-ink">{step.title}</h3>
+              <h3 className="mt-1.5 text-heading font-semibold text-ink">{step.title}</h3>
               <p className="mt-1.5 text-sm leading-relaxed text-ink-2">{step.body}</p>
+
+              {/*
+                Sits on the hairline between this cell and the next, and only
+                where there *is* a next cell on the same row — so it never
+                points off the end of a row or out of the band.
+              */}
+              {i < STEPS.length - 1 ? (
+                <span
+                  aria-hidden="true"
+                  className={[
+                    'absolute -right-[7px] top-8 hidden h-3.5 w-3.5 items-center justify-center',
+                    'rounded-full bg-surface text-ink-4 lg:flex',
+                    i % 2 === 0 ? 'sm:flex lg:flex' : 'sm:hidden',
+                  ].join(' ')}
+                >
+                  <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none">
+                    <path
+                      d="m4.5 2.5 3.5 3.5-3.5 3.5"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              ) : null}
             </li>
           ))}
         </ol>
@@ -205,5 +269,93 @@ export function Landing({
         ) : null}
       </section>
     </div>
+  );
+}
+
+
+/*
+ * ── Step glyphs ────────────────────────────────────────────────────────────
+ *
+ * All four share one 56×40 box, one stroke weight and one radius, so the row
+ * reads as four states of the same object rather than four unrelated icons.
+ * `currentColor` throughout — the colour is set once on the container.
+ */
+
+const GLYPH = 'h-10 w-14';
+
+/** A frame being taken: the room, plus a shutter's corner marks. */
+function CaptureGlyph() {
+  return (
+    <svg viewBox="0 0 56 40" className={GLYPH} fill="none" aria-hidden="true">
+      <rect x="8.75" y="6.75" width="38.5" height="26.5" rx="3" stroke="currentColor" strokeWidth="1.4" opacity="0.5" />
+      {/* The room inside it. */}
+      <path d="M16 27h24M20 27v-8h7v8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.4" />
+      <rect x="31" y="15" width="7" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" opacity="0.4" />
+      {/* Shutter corners. */}
+      {[
+        'M4 12V8a2 2 0 0 1 2-2h4',
+        'M52 12V8a2 2 0 0 0-2-2h-4',
+        'M4 28v4a2 2 0 0 0 2 2h4',
+        'M52 28v4a2 2 0 0 1-2 2h-4',
+      ].map((d) => (
+        <path key={d} d={d} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      ))}
+    </svg>
+  );
+}
+
+/** The same frame, twice, with the divider between them. */
+function CompareGlyph() {
+  return (
+    <svg viewBox="0 0 56 40" className={GLYPH} fill="none" aria-hidden="true">
+      <rect x="2.75" y="8.75" width="24.5" height="22.5" rx="3" stroke="currentColor" strokeWidth="1.4" opacity="0.5" />
+      <rect x="28.75" y="8.75" width="24.5" height="22.5" rx="3" stroke="currentColor" strokeWidth="1.4" opacity="0.5" />
+      <path d="M8 26h13M11 26v-6h5v6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.4" />
+      <path d="M34 26h13M37 26v-6h5v6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.4" />
+      {/* The divider, which is the whole idea. */}
+      <path d="M28 4v32" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="28" cy="20" r="4" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** A frame with one region marked, and the mark answered. */
+function ReviewGlyph() {
+  return (
+    <svg viewBox="0 0 56 40" className={GLYPH} fill="none" aria-hidden="true">
+      <rect x="4.75" y="6.75" width="38.5" height="26.5" rx="3" stroke="currentColor" strokeWidth="1.4" opacity="0.5" />
+      <path d="M11 27h20M15 27v-7h6v7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.4" />
+      {/* The marked region — accent, the same colour an evidence mark carries. */}
+      <rect
+        x="24"
+        y="12"
+        width="13"
+        height="9"
+        rx="1.5"
+        className="stroke-accent"
+        strokeWidth="1.6"
+      />
+      {/* The decision. */}
+      <circle cx="45" cy="29" r="7" className="fill-surface" stroke="currentColor" strokeWidth="1.4" />
+      <path d="m42 29 2.2 2.2L48.5 27" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** A sheet with the pair on it, and a seal. */
+function RecoverGlyph() {
+  return (
+    <svg viewBox="0 0 56 40" className={GLYPH} fill="none" aria-hidden="true">
+      <rect x="13.75" y="2.75" width="28.5" height="34.5" rx="3" stroke="currentColor" strokeWidth="1.4" opacity="0.5" />
+      <path d="M19 9h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <rect x="19" y="14" width="7" height="5" rx="1" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.5" opacity="0.55" />
+      <rect x="29" y="14" width="7" height="5" rx="1" stroke="currentColor" strokeWidth="1.2" opacity="0.55" />
+      {[24, 27.5, 31].map((y, i) => (
+        <path key={y} d={`M19 ${y}h${i === 2 ? 9 : 17}`} stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity="0.3" />
+      ))}
+      {/* The seal, in the same green the evidence seal uses elsewhere. */}
+      <circle cx="38" cy="30" r="6" className="fill-ok-tint stroke-ok" strokeWidth="1.3" />
+      <path d="m35.4 30 1.9 1.9 3.3-3.5" className="stroke-ok" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }

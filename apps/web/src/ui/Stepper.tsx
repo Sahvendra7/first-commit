@@ -66,7 +66,15 @@ export function Stepper({ steps, currentIndex, className, ...rest }: StepperProp
                 />
               ) : null}
 
+              {/*
+                `key` on the current index, so the active node is a *new*
+                element whenever the record advances and its one ring plays
+                again. A re-render that does not change the stage reuses the
+                element and stays still — which is what keeps this a signal
+                rather than a decoration.
+              */}
               <span
+                key={active ? `active-${currentIndex}` : step.id}
                 aria-hidden="true"
                 className={[
                   'relative z-10 flex h-6 w-6 items-center justify-center rounded-full',
@@ -74,7 +82,7 @@ export function Stepper({ steps, currentIndex, className, ...rest }: StepperProp
                   done
                     ? 'bg-brand text-white'
                     : active
-                      ? 'bg-brand text-white ring-4 ring-brand/15'
+                      ? 'ring-once bg-brand text-white ring-4 ring-brand/15'
                       : 'border-2 border-line-strong bg-paper',
                 ].join(' ')}
               >

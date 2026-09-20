@@ -134,7 +134,7 @@ export function ChangeReview({
               {reason}
             </p>
           ) : null}
-          <ul className="space-y-3" data-testid={`review-list-${room.roomId}`}>
+          <ul className="stagger space-y-3" data-testid={`review-list-${room.roomId}`}>
             {room.changes.map((change, index) => (
               <ChangeEntry
                 key={change.id}
@@ -196,9 +196,17 @@ function ChangeEntry({ change, index, roomId, onDecideChange, deciding }: Change
             <Badge tone="accent">Added by you</Badge>
           )}
           <span className="grow" />
+          {/*
+            `key` on the disposition, so React replaces the element when the
+            decision changes and the entrance animation runs again. That is the
+            acknowledgement: the badge the tenant just caused to change is the
+            thing that moves. No timer, and no state to clear up afterwards.
+          */}
           <Badge
+            key={change.tenantAction ?? 'PENDING'}
             tone={accepted ? 'ok' : rejected ? 'neutral' : 'warn'}
             dot
+            className="pop"
             data-testid={`status-${change.id}`}
           >
             {accepted ? 'Accepted' : rejected ? 'Rejected' : 'Pending'}
