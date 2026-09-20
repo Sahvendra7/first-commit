@@ -13,6 +13,7 @@ import { awaitIngest, countFor } from '../../lib/ingest.js';
 import { firstMatchedPair, missingPairReason, resolveRooms } from '../../lib/pairing.js';
 import { toDiffAdditions, type MarkedChange } from '../../lib/marked-change.js';
 import { jobForProgress, useJob } from '../../lib/use-job.js';
+import { effectivePhase } from '../../lib/phase.js';
 import { CompareSlider } from '../compare/CompareSlider.js';
 import { ChangeMarker } from '../compare/ChangeMarker.js';
 import { ConditionSummary } from '../compare/ConditionSummary.js';
@@ -30,7 +31,11 @@ import { Recovery } from '../claim/Recovery.js';
 export interface TenancyViewProps {
   readonly api: HandoverApiClient;
   readonly tenancyId: string;
-  readonly phase: Phase;
+  /**
+   * An explicit `?phase=` override. Absent on almost every visit — the phase is
+   * otherwise derived from the tenancy's own status.
+   */
+  readonly phaseOverride?: Phase;
   readonly onSignOut?: () => void;
 }
 
@@ -41,7 +46,12 @@ type CaptureState =
   | { readonly kind: 'INGEST_TIMEOUT'; readonly roomId: string; readonly ingested: number; readonly expected: number }
   | { readonly kind: 'CLOSING' };
 
-export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewProps) {
+export function TenancyView({
+  api,
+  tenancyId,
+  phaseOverride,
+  onSignOut,
+}: TenancyViewProps) {
   const [tenancy, setTenancy] = useState<GetTenancyResponse>();
   const [diff, setDiff] = useState<GetDiffResponse>();
   const [rooms, setRooms] = useState<readonly RoomDiffView[]>([]);
@@ -58,6 +68,18 @@ export function TenancyView({ api, tenancyId, phase, onSignOut }: TenancyViewPro
   const [deciding, setDeciding] = useState(false);
   /** Whether the recovery screen is open over the record. */
   const [recoveryOpen, setRecoveryOpen] = useState(false);
+
+  /**
+   * Derived from the record, not from the URL. A tenancy at `MOVEIN_PENDING` is
+   * capturing move-in; anything later has a Condition Report behind it and is
+   * capturing move-out.
+   *
+   * `MOVEOUT` before the tenancy loads is inert: nothing reads the phase until
+   * `tenancy` exists, because every screen below is behind that guard.
+   */
+  const phase: Phase = tenancy
+    ? effectivePhase(tenancy.tenancy.status, phaseOverride)
+    : (phaseOverride ?? 'MOVEOUT');
 
   const load = useCallback(async () => {
     setError(undefined);

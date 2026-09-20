@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Phase } from '@handover/shared';
 import { createApiClient, isDemoMode, type HandoverApiClient } from './lib/api-client.js';
 import { tryLoadConfig, type AppConfig } from './lib/config.js';
+import { phaseOverrideFrom } from './lib/phase.js';
 import { CognitoAuth, type AuthUser } from './lib/auth/cognito-auth.js';
 import { DEMO_TENANCY_ID } from './lib/demo/index.js';
 import { SignIn } from './features/auth/SignIn.js';
@@ -44,10 +44,16 @@ export function App() {
     return fromQuery ?? (isDemoMode() ? DEMO_TENANCY_ID : undefined);
   });
 
-  const phase: Phase = useMemo(() => {
-    const raw = new URLSearchParams(globalThis.location?.search ?? '').get('phase');
-    return raw === 'MOVEIN' ? 'MOVEIN' : 'MOVEOUT';
-  }, []);
+  /*
+   * Only an explicit override. The phase itself is derived from the tenancy's
+   * own status inside `TenancyView`, which is the component that has the
+   * record — defaulting to MOVEOUT here filed a new tenancy's move-in
+   * photographs as move-out evidence.
+   */
+  const phaseOverride = useMemo(
+    () => phaseOverrideFrom(globalThis.location?.search ?? ''),
+    [],
+  );
 
   // The client is built once demo mode or a signed-in session makes it usable.
   useEffect(() => {
@@ -133,7 +139,12 @@ export function App() {
               </button>
             </div>
           ) : null}
-          <TenancyView api={api} tenancyId={tenancyId} phase={phase} onSignOut={signOut} />
+          <TenancyView
+            api={api}
+            tenancyId={tenancyId}
+            {...(phaseOverride ? { phaseOverride } : {})}
+            onSignOut={signOut}
+          />
         </>
       )}
     </main>
