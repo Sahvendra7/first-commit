@@ -21,7 +21,7 @@ import { ConditionSummary } from '../compare/ConditionSummary.js';
 import { ChangeReview, REVIEW_REASON_COPY } from '../compare/ChangeReview.js';
 import { RoomCapture } from '../capture/RoomCapture.js';
 import { Recovery } from '../claim/Recovery.js';
-import { Badge, Banner, Button, EmptyState, PairGlyph, Section } from '../../ui/index.js';
+import { Badge, Banner, Button, PairGlyph, Section } from '../../ui/index.js';
 
 /**
  * One tenancy, end to end: capture -> ingest -> close the phase -> compare ->
@@ -120,6 +120,25 @@ export function TenancyView({
   useEffect(() => {
     void load();
   }, [load]);
+
+  /*
+   * Opening a room, or closing one, is a change of screen — so it starts at
+   * the top of that screen.
+   *
+   * Without this the scroll position carries over: tapping the fourth room
+   * card, 2,000px down the record, dropped the tenant into the middle of the
+   * comparison with the room's own name and its "all rooms" control above the
+   * fold and underneath the sticky app bar. It reads as a broken page rather
+   * than as a navigation.
+   *
+   * `auto` rather than `smooth`: this is a screen change, not a scroll, and
+   * animating 2,000px of the previous screen on the way past is both slow and,
+   * for anyone who asked for less motion, unwelcome. Naming it explicitly also
+   * keeps it jump-cut regardless of any `scroll-behavior` set in CSS.
+   */
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [roomId, recoveryOpen]);
 
   /**
    * Watches the report or diff job started by closing a phase.
@@ -453,64 +472,97 @@ export function TenancyView({
           photographs are the thing that benefits from the width — a form does
           not.
         */}
-        <Section
-          headingLevel={2}
-          headingId="room-compare-heading"
-          eyebrow="Before and after"
-          title="Compare the two records"
-          lead="Drag the divider, or use the arrow keys. Each photograph carries the time the server received it and its integrity hash."
-          /*
-            Capped rather than full-bleed. The frame is a 4:3 box, so at the
-            shell's full 72rem it is over 850px tall and the tenant has to
-            scroll past one photograph to reach the controls under it.
-          */
-          className="max-w-4xl"
+        {/*
+          ── The comparison, on a stage ────────────────────────────────────
+
+          A dark panel that bleeds to the shell's gutter. Two reasons, and
+          neither is decoration:
+
+          - The photograph is the product's most convincing object, and a
+            photograph on paper-coloured card competes with the card. On
+            `night` the only lit thing on the screen is the evidence.
+          - The frame is a 4:3 box, so at the shell's full 72rem it is over
+            850px tall and the tenant scrolls past one photograph to reach the
+            controls under it. The stage caps the frame at a readable width
+            and centres it, which is what a capped `max-w` inside a left-
+            aligned column could not do — that just left half the screen empty.
+
+          The bleed is to the shell's padding (`-mx-4 sm:-mx-6`), never to
+          `100vw`: a viewport-width child inside a centred column is how a
+          horizontal scrollbar appears on every page that has a vertical one.
+        */}
+        <section
+          aria-labelledby="room-compare-heading"
+          data-testid="compare-stage"
+          className="-mx-4 bg-night px-4 py-7 sm:-mx-6 sm:rounded-3xl sm:px-6 sm:py-9 lg:px-10"
         >
-          {pair ? (
-            <CompareSlider
-              before={{
-                url: pair.before.url,
-                alt: `${room.roomLabel} at move-in, view ${pair.pairIndex + 1}`,
-                receivedAt: pair.before.receivedAt,
-                sha256: pair.before.sha256,
-              }}
-              after={{
-                url: pair.after.url,
-                alt: `${room.roomLabel} at move-out, view ${pair.pairIndex + 1}`,
-                receivedAt: pair.after.receivedAt,
-                sha256: pair.after.sha256,
-              }}
-              overlays={marks
-                .filter((m) => m.box)
-                .map((m) => ({ id: m.id, box: m.box!, label: m.description }))}
-              // Presigned GETs expire in five minutes; re-fetch rather than
-              // leaving a broken image on screen.
-              onImageError={() => void load()}
-            />
-          ) : (
-            <EmptyState
-              data-testid="missing-pair"
-              icon={<PairGlyph />}
-              title="Nothing to compare yet"
-            >
-              {noPair === 'NO_PHOTOS'
-                ? 'No photographs have been recorded for this room yet.'
-                : noPair === 'NO_AFTER'
-                  ? 'This room has move-in photographs but no move-out photographs yet, so there is nothing to compare.'
-                  : noPair === 'NO_BEFORE'
-                    ? 'This room has move-out photographs but no move-in photographs, so there is nothing to compare.'
-                    : 'The move-in and move-out photographs for this room do not line up as matching views yet, so there is no like-for-like comparison to show.'}
-            </EmptyState>
-          )}
-        </Section>
+          <div className="mx-auto max-w-4xl">
+            <header className="mb-4">
+              <p className="text-micro font-semibold uppercase text-white/45">
+                Before and after
+              </p>
+              <h2
+                id="room-compare-heading"
+                className="mt-1 font-display text-[1.375rem] leading-tight tracking-[-0.015em] text-white"
+              >
+                Compare the two records
+              </h2>
+              <p className="mt-1.5 text-sm text-white/60">
+                Drag the divider, or use the arrow keys. Each photograph carries the time
+                the server received it and its integrity hash.
+              </p>
+            </header>
+
+            {pair ? (
+              <CompareSlider
+                tone="night"
+                before={{
+                  url: pair.before.url,
+                  alt: `${room.roomLabel} at move-in, view ${pair.pairIndex + 1}`,
+                  receivedAt: pair.before.receivedAt,
+                  sha256: pair.before.sha256,
+                }}
+                after={{
+                  url: pair.after.url,
+                  alt: `${room.roomLabel} at move-out, view ${pair.pairIndex + 1}`,
+                  receivedAt: pair.after.receivedAt,
+                  sha256: pair.after.sha256,
+                }}
+                overlays={marks
+                  .filter((m) => m.box)
+                  .map((m) => ({ id: m.id, box: m.box!, label: m.description }))}
+                // Presigned GETs expire in five minutes; re-fetch rather than
+                // leaving a broken image on screen.
+                onImageError={() => void load()}
+              />
+            ) : (
+              <div
+                data-testid="missing-pair"
+                className="rounded-2xl border border-white/12 bg-white/[0.04] px-6 py-12 text-center"
+              >
+                <PairGlyph className="mx-auto h-9 w-11 text-white/35" />
+                <p className="mt-3 text-heading font-semibold text-white">
+                  Nothing to compare yet
+                </p>
+                <p className="mx-auto mt-1.5 max-w-measure text-sm leading-relaxed text-white/60">
+                  {noPair === 'NO_PHOTOS'
+                    ? 'No photographs have been recorded for this room yet.'
+                    : noPair === 'NO_AFTER'
+                      ? 'This room has move-in photographs but no move-out photographs yet, so there is nothing to compare.'
+                      : noPair === 'NO_BEFORE'
+                        ? 'This room has move-out photographs but no move-in photographs, so there is nothing to compare.'
+                        : 'The move-in and move-out photographs for this room do not line up as matching views yet, so there is no like-for-like comparison to show.'}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
 
         {/*
           The decision, directly under the evidence it is about.
           `onDecideChange` still carries `(roomId, changeId, action)` to the
           same PATCH; only the screen it is rendered on changed.
         */}
-        <div className="rule-soft" role="presentation" />
-
         <ChangeReview
           room={room}
           {...(room.reviewReason ? { reason: REVIEW_REASON_COPY[room.reviewReason] } : {})}
@@ -521,7 +573,7 @@ export function TenancyView({
 
         <div className="rule-soft" role="presentation" />
 
-        <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
+        <div className="grid items-start gap-6 lg:grid-cols-2 lg:gap-8">
           <RoomCapture
             api={api}
             tenancyId={tenancyId}

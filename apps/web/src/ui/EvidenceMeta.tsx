@@ -14,6 +14,12 @@
 export interface EvidenceMetaProps {
   readonly label: string;
   /**
+   * The surface this sits on. `night` is for the comparison stage, where the
+   * photograph is on a dark panel and paper-coloured ink would be unreadable.
+   * The hierarchy is identical either way — only the ink changes.
+   */
+  readonly tone?: 'paper' | 'night';
+  /**
    * `PhotoRef.receivedAt` — the **server** clock. Never `exifCapturedAt`,
    * which is device-reported and is not what the record attests to.
    */
@@ -40,22 +46,44 @@ export function formatReceivedAt(iso: string): string {
   });
 }
 
+const INK: Record<'paper' | 'night', { label: string; value: string; quiet: string; seal: string }> =
+  {
+    paper: {
+      label: 'text-ink-3',
+      value: 'text-ink-2',
+      quiet: 'text-ink-3',
+      seal: 'text-ok',
+    },
+    night: {
+      label: 'text-white/45',
+      value: 'text-white/85',
+      quiet: 'text-white/55',
+      // The paper `ok` green is too dark to read on `night`; this is the same
+      // hue lifted until it carries on the dark panel.
+      seal: 'text-[rgb(126_196_162)]',
+    },
+  };
+
 export function EvidenceMeta({
   label,
+  tone = 'paper',
   receivedAt,
   sha256,
   className,
   ...rest
 }: EvidenceMetaProps) {
+  const ink = INK[tone];
   return (
     <div className={className ?? ''} {...rest}>
-      <p className="text-micro font-semibold uppercase text-ink-3">{label}</p>
+      <p className={`text-micro font-semibold uppercase ${ink.label}`}>{label}</p>
       {receivedAt ? (
-        <p className="tnum mt-1 text-xs font-medium text-ink-2">{formatReceivedAt(receivedAt)}</p>
+        <p className={`tnum mt-1 text-xs font-medium ${ink.value}`}>
+          {formatReceivedAt(receivedAt)}
+        </p>
       ) : null}
       {sha256 ? (
-        <p className="mt-0.5 flex items-center gap-1 text-[11px] text-ink-3" title={sha256}>
-          <VerifiedGlyph className="h-3 w-3 shrink-0 text-ok" />
+        <p className={`mt-0.5 flex items-center gap-1 text-[11px] ${ink.quiet}`} title={sha256}>
+          <VerifiedGlyph className={`h-3 w-3 shrink-0 ${ink.seal}`} />
           <span className="font-mono">{shortDigest(sha256)}</span>
         </p>
       ) : null}

@@ -92,6 +92,15 @@ export interface CompareSliderProps {
   readonly step?: number;
   readonly beforeLabel?: string;
   readonly afterLabel?: string;
+  /**
+   * The surface this sits on.
+   *
+   * `night` is the room screen's comparison stage: a dark panel, so the
+   * photograph is the only lit thing on the screen and the chrome around it
+   * recedes rather than competing. Everything about the control is the same in
+   * both tones — only the ink of the frame around it changes.
+   */
+  readonly tone?: 'paper' | 'night';
   readonly className?: string;
   /**
    * Presigned photo URLs expire in five minutes and a review session outlasts
@@ -117,6 +126,7 @@ export function CompareSlider({
   step = 0.02,
   beforeLabel = 'Move-in',
   afterLabel = 'Move-out',
+  tone = 'paper',
   className,
   onImageError,
 }: CompareSliderProps) {
@@ -222,6 +232,7 @@ export function CompareSlider({
   const pct = (value * 100).toFixed(4);
 
   const showBoth = view === 'SIDE_BY_SIDE';
+  const night = tone === 'night';
 
   return (
     <div className={className}>
@@ -233,7 +244,9 @@ export function CompareSlider({
       <div
         role="group"
         aria-label="Comparison view"
-        className="mb-3 inline-flex rounded-xl border border-line bg-surface p-1 shadow-xs"
+        className={`mb-3 inline-flex rounded-xl border p-1 ${
+          night ? 'border-white/12 bg-white/[0.06]' : 'border-line bg-surface shadow-xs'
+        }`}
       >
         {(
           [
@@ -249,8 +262,12 @@ export function CompareSlider({
             data-testid={`compare-view-${mode.toLowerCase()}`}
             className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition-colors duration-[var(--dur-1)] ${
               view === mode
-                ? 'bg-brand text-white'
-                : 'text-ink-2 hover:bg-sunk'
+                ? night
+                  ? 'bg-white text-night'
+                  : 'bg-brand text-white'
+                : night
+                  ? 'text-white/65 hover:bg-white/10 hover:text-white'
+                  : 'text-ink-2 hover:bg-sunk'
             }`}
           >
             {label}
@@ -295,7 +312,17 @@ export function CompareSlider({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={handleKeyDown}
-        className="relative w-full cursor-ew-resize select-none overflow-hidden rounded-2xl bg-night shadow-md outline-none ring-offset-2 ring-offset-paper focus-visible:ring-2 focus-visible:ring-brand-hi"
+        className={[
+          'group/frame relative w-full select-none overflow-hidden rounded-2xl bg-night outline-none',
+          // `grab`/`grabbing` rather than `ew-resize`: the handle is an object
+          // being moved, not an edge being resized, and the cursor is the
+          // cheapest way to say which.
+          dragging ? 'cursor-grabbing' : 'cursor-grab',
+          'ring-offset-2 focus-visible:ring-2 focus-visible:ring-brand-hi',
+          night
+            ? 'shadow-frame ring-1 ring-white/10 ring-offset-night'
+            : 'shadow-md ring-offset-paper',
+        ].join(' ')}
         style={{ aspectRatio: String(frameAspect), touchAction: 'none' }}
       >
         {/*
@@ -369,10 +396,20 @@ export function CompareSlider({
           className="pointer-events-none absolute inset-y-0 w-px bg-white/90 shadow-[0_0_0_1px_rgb(var(--c-night)/0.45)]"
           style={{ left: `${pct}%` }}
         >
+          {/*
+            The handle grows a little under the finger and settles back. It is
+            the one place in the app where the interaction is the product, so
+            it is worth the two transforms — and `prefers-reduced-motion`
+            collapses the transition globally, leaving the size change without
+            the travel.
+          */}
           <div
-            className={`absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white ring-1 ring-night/10 transition-shadow duration-[var(--dur-1)] ${
-              dragging ? 'shadow-lg' : 'shadow-md'
-            }`}
+            className={[
+              'absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2',
+              'items-center justify-center rounded-full bg-white ring-1 ring-night/10',
+              'transition-[box-shadow,scale] duration-[var(--dur-2)] ease-[var(--ease)]',
+              dragging ? 'scale-110 shadow-lg' : 'scale-100 shadow-md group-hover/frame:scale-105',
+            ].join(' ')}
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5 text-brand" fill="currentColor">
               <path d="M9.5 6 5 12l4.5 6V6Zm5 0v12l4.5-6-4.5-6Z" />
@@ -392,7 +429,7 @@ export function CompareSlider({
         </Banner>
       ) : null}
 
-      <p id={labelId} className="mt-3 text-xs text-ink-3">
+      <p id={labelId} className={`mt-3 text-xs ${night ? 'text-white/55' : 'text-ink-3'}`}>
         {showBoth
           ? `${beforeLabel} and ${afterLabel}, side by side. Switch to the slider to see the two in the same frame.`
           : `Drag to compare ${beforeLabel.toLowerCase()} with ${afterLabel.toLowerCase()}. Use the arrow keys for fine control.`}
@@ -406,15 +443,21 @@ export function CompareSlider({
       {before.sha256 ?? after.sha256 ?? before.receivedAt ?? after.receivedAt ? (
         <div
           data-testid="evidence-meta"
-          className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-line bg-sunk p-3"
+          className={
+            night
+              ? 'mt-4 grid grid-cols-2 gap-4 border-t border-white/10 pt-4'
+              : 'mt-3 grid grid-cols-2 gap-3 rounded-xl border border-line bg-sunk p-3'
+          }
         >
           <EvidenceMeta
             label={beforeLabel}
+            tone={tone}
             {...(before.receivedAt ? { receivedAt: before.receivedAt } : {})}
             {...(before.sha256 ? { sha256: before.sha256 } : {})}
           />
           <EvidenceMeta
             label={afterLabel}
+            tone={tone}
             {...(after.receivedAt ? { receivedAt: after.receivedAt } : {})}
             {...(after.sha256 ? { sha256: after.sha256 } : {})}
           />
@@ -428,7 +471,10 @@ export function CompareSlider({
       {beforeAspect !== undefined &&
       afterAspect !== undefined &&
       Math.abs(beforeAspect - afterAspect) > 0.01 ? (
-        <p className="mt-2 text-xs text-ink-3" data-testid="aspect-mismatch-note">
+        <p
+          className={`mt-2.5 text-[0.6875rem] leading-relaxed ${night ? 'text-white/40' : 'text-ink-3'}`}
+          data-testid="aspect-mismatch-note"
+        >
           These photographs were taken at different aspect ratios, so both are shown
           letterboxed inside the same frame. Neither image has been cropped or stretched.
         </p>

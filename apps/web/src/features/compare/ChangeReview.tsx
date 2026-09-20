@@ -287,10 +287,21 @@ function ChangeEntry({ change, index, roomId, onDecideChange, deciding }: Change
         always offered — including for a decision already made.
       */}
       {onDecideChange ? (
-        <div className="border-t border-line/70 bg-sunk/60 p-3 sm:px-5 sm:py-3.5">
-          <div className="grid grid-cols-2 gap-2.5">
+        <div
+          className={[
+            'border-t p-3 sm:px-5 sm:py-3.5',
+            isSuggestion ? 'border-brand-line/60 bg-white/55' : 'border-line/70 bg-sunk/60',
+          ].join(' ')}
+        >
+          {/*
+            Accept leads. They are not two equal options: accepting is what the
+            tenant came here to do, and a matched pair of outline buttons made
+            the screen ask a question it had no opinion about. Rejecting is
+            still one press away and still fully reachable.
+          */}
+          <div className="grid grid-cols-[1.35fr_1fr] gap-2.5">
             <Button
-              tone={accepted ? 'primary' : 'secondary'}
+              tone={rejected ? 'secondary' : 'primary'}
               data-testid={`accept-${change.id}`}
               aria-pressed={accepted}
               {...(deciding === undefined ? {} : { disabled: deciding })}
