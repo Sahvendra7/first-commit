@@ -337,7 +337,7 @@ export class MantleRoomDiffAdapter implements RoomDiffPort {
       droppedClusters: merged.dropped.length,
     });
 
-    return { ok: true, value: merged };
+    return { ok: true, value: merged, modelId };
   }
 
   #fail(

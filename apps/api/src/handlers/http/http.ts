@@ -10,6 +10,7 @@
  */
 import { ZodError } from 'zod';
 import { problemSchema } from '@handover/shared';
+import { UnsignedEvidenceError } from '../../domain/evidence/aggregate.js';
 import type { ApiErrorCode } from '@handover/shared';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 import type { ZodSchema } from 'zod';
@@ -98,6 +99,35 @@ function formatZod(error: ZodError): string {
     .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
     .slice(0, 8)
     .join('; ');
+}
+
+/**
+ * Turn an unsignable-evidence failure into a 503 the client can retry.
+ *
+ * Shared by both read paths, because both assemble evidence and both must
+ * refuse to under-report it (see `UnsignedEvidenceError`).
+ *
+ * 503 rather than 500: the evidence is intact and the request is not
+ * malformed — this attempt could not render it, and the next one probably
+ * can, because a signing failure is almost always a transient credential
+ * problem rather than a property of the object. The photo ids go to the log,
+ * where an operator can act on them, and never into the response body: an S3
+ * key carries the tenancy id and the room id (§10.1).
+ */
+export function rethrowUnsigned(err: unknown, tenancyId: string): never {
+  if (err instanceof UnsignedEvidenceError) {
+    console.error('evidence_unsignable', {
+      tenancyId,
+      photoIds: err.photoIds,
+      count: err.s3Keys.length,
+    });
+    throw new HttpError(
+      503,
+      'INTERNAL',
+      'Evidence could not be prepared for download. Please retry.',
+    );
+  }
+  throw err;
 }
 
 /**

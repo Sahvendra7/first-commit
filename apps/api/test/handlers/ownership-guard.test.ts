@@ -28,10 +28,27 @@ const HTTP_DIR = join(import.meta.dirname, '../../src/handlers/http');
 const NOT_ROUTES = new Set(['http.ts']);
 const CREATES_OWNERSHIP = new Set(['create-tenancy.ts']);
 
+/**
+ * §5.2: "all routes under `/v1`, JWT-authorized except
+ * `GET /v1/state-rules/{code}` and health." A public route has no caller and
+ * no tenancy, so it has nothing to assert ownership against.
+ *
+ * This set is the dangerous one in this file — an entry here switches off the
+ * entire authorization model for a route. It is deliberately spelled as an
+ * explicit allowlist of one, and the block at the bottom of this file proves
+ * that anything in it reads no tenancy data, so adding a route here cannot
+ * quietly expose a tenancy.
+ */
+const PUBLIC_ROUTES = new Set(['get-state-rules.ts']);
+
 const routeFiles = (): string[] =>
   readdirSync(HTTP_DIR)
     .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
     .filter((f) => !NOT_ROUTES.has(f));
+
+/** Every route that is behind the JWT authorizer — i.e. all but the public one. */
+const authenticatedRouteFiles = (): string[] =>
+  routeFiles().filter((f) => !PUBLIC_ROUTES.has(f));
 
 const source = (file: string): string => readFileSync(join(HTTP_DIR, file), 'utf8');
 
@@ -45,16 +62,19 @@ describe('every route calls the ownership guard (§10.2)', () => {
     expect(routes).toContain('get-diff.ts');
   });
 
-  it.each(routeFiles().filter((f) => !CREATES_OWNERSHIP.has(f)))(
+  it.each(authenticatedRouteFiles().filter((f) => !CREATES_OWNERSHIP.has(f)))(
     '%s calls assertOwnership',
     (file) => {
       expect(source(file)).toContain('assertOwnership(');
     },
   );
 
-  it.each(routeFiles())('%s takes the caller from verified JWT claims', (file) => {
-    expect(source(file)).toContain('callerSub(event)');
-  });
+  it.each(authenticatedRouteFiles())(
+    '%s takes the caller from verified JWT claims',
+    (file) => {
+      expect(source(file)).toContain('callerSub(event)');
+    },
+  );
 
   /**
    * §7 and §10.1: no endpoint accepts an owner id from the client. A handler
@@ -75,11 +95,58 @@ describe('every route calls the ownership guard (§10.2)', () => {
   });
 });
 
+/**
+ * The public route is the one place the authorization model is switched off,
+ * so it gets its own assertions rather than a silent exemption.
+ */
+describe('the public route reads no tenancy data (§5.2, §10.1)', () => {
+  it('is exactly the state-rules route and nothing else', () => {
+    expect([...PUBLIC_ROUTES]).toEqual(['get-state-rules.ts']);
+  });
+
+  it.each([...PUBLIC_ROUTES])('%s exists', (file) => {
+    expect(routeFiles()).toContain(file);
+  });
+
+  /**
+   * A public handler that could reach a tenancy partition would be a
+   * cross-tenant read with no caller to check it against. `getStateRule` is
+   * the only store function it is allowed to touch.
+   */
+  it.each([...PUBLIC_ROUTES])('%s reaches no tenancy-scoped store function', (file) => {
+    const text = source(file);
+    for (const forbidden of [
+      'getTenancyPartition',
+      'getTenancy(',
+      'getRooms',
+      'getPhotosForPhase',
+      'getJob',
+      'getDiffs',
+      'listTenanciesForUser',
+      'signEvidenceGet',
+    ]) {
+      expect(text).not.toContain(forbidden);
+    }
+  });
+
+  it.each([...PUBLIC_ROUTES])('%s does not pretend to have a caller', (file) => {
+    expect(source(file)).not.toContain('callerSub(');
+  });
+});
+
 describe('callerSub is the only source of a caller identity', () => {
   it('is the single place that reads a JWT claim', () => {
+    /**
+     * Matches the *access* — `.authorizer`, `['authorizer']` — rather than the
+     * bare word, so a handler that merely mentions the authorizer in a comment
+     * is not a false positive while one that actually reaches into the claim
+     * still is. Tightening this from a substring search was the point: the
+     * thing being defended against is a second reader of JWT claims, not a
+     * second use of the noun.
+     */
     const readers = readdirSync(HTTP_DIR)
       .filter((f) => f.endsWith('.ts'))
-      .filter((f) => source(f).includes('authorizer'));
+      .filter((f) => /\.authorizer\b|\[['"]authorizer['"]\]/.test(source(f)));
     expect(readers).toEqual(['http.ts']);
   });
 });
