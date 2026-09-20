@@ -6,6 +6,9 @@
 #   AWS_PROFILE=handover-dev apps/web/scripts/deploy.sh
 #   AWS_PROFILE=handover-dev STAGE=Prod APP_NAME=handover-web apps/web/scripts/deploy.sh
 #
+# Set WEB_URL_OUT=<path> to have the deployed URL written to that file as well
+# as printed; CI feeds it straight into the API's `webOrigin`.
+#
 # ── Why Amplify and not the CloudFront stack ─────────────────────────────────
 #
 # `infra/cdk/lib/web-stack.ts` describes S3 + CloudFront and is the intended
@@ -171,6 +174,15 @@ DEEP="$(code "${WEB_URL}/some/deep/path")"
 echo "    /                 ${ROOT}"
 echo "    /some/deep/path   ${DEEP}   (SPA rewrite)"
 [[ "${ROOT}" == "200" && "${DEEP}" == "200" ]] || { echo "error: smoke test failed" >&2; exit 1; }
+
+# The URL, for a caller that has to act on it. Written only here, after the
+# smoke test, so a path that appears in this file is one that answered 200 —
+# and written rather than parsed off stdout so nothing has to re-derive the
+# `https://<branch>.<appId>.amplifyapp.com` formula and drift from it. A plain
+# file rather than `$GITHUB_OUTPUT` keeps this script owing nothing to CI.
+if [[ -n "${WEB_URL_OUT:-}" ]]; then
+  printf '%s\n' "${WEB_URL}" > "${WEB_URL_OUT}"
+fi
 
 echo
 echo "Deployed: ${WEB_URL}"
