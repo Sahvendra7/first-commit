@@ -1,82 +1,90 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { GetDiffResponse, GetTenancyResponse, RoomDiffView } from '@handover/shared';
+import type { Phase } from '@handover/shared';
 import { createApiClient, isDemoMode, type HandoverApiClient } from './lib/api-client.js';
+import { tryLoadConfig, type AppConfig } from './lib/config.js';
+import { CognitoAuth, type AuthUser } from './lib/auth/cognito-auth.js';
 import { DEMO_TENANCY_ID } from './lib/demo/index.js';
-import { toDiffAdditions, type MarkedChange } from './lib/marked-change.js';
-import { CompareSlider } from './features/compare/CompareSlider.js';
-import { ChangeMarker } from './features/compare/ChangeMarker.js';
-import { ConditionSummary } from './features/compare/ConditionSummary.js';
-import { RoomCapture } from './features/capture/RoomCapture.js';
+import { SignIn } from './features/auth/SignIn.js';
+import { CreateTenancy } from './features/tenancy/CreateTenancy.js';
+import { TenancyView } from './features/tenancy/TenancyView.js';
 
 /**
- * Demo shell wiring the four capture/compare components together.
+ * Application shell: configuration, the auth boundary, and which tenancy is on
+ * screen.
  *
- * Routing proper (§14 `routes/`) and the tenancy setup and claim flows are not
- * part of this slice. The tenancy id comes from the query string; there is no
- * `localStorage` anywhere in this app, and §7 defines no list endpoint, so a
- * tenancy is reached by id or not at all.
+ * Demo mode short-circuits both gates — it needs no backend and no account,
+ * which is the entire point of it (web-contract §8). Production mode needs
+ * both, and never borrows from the demo when either is missing: a fixture
+ * shown to a real tenant would be fabricated evidence.
+ *
+ * The tenancy id lives in the query string. There is no `localStorage` in this
+ * app, and §7 defines no list endpoint, so a tenancy is reached by id or it is
+ * created.
  */
 export function App() {
   const demo = isDemoMode();
-  const tenancyId = useMemo(() => {
-    const fromQuery = new URLSearchParams(globalThis.location?.search ?? '').get('tenancy');
-    return fromQuery ?? (demo ? DEMO_TENANCY_ID : '');
-  }, [demo]);
+  const configResult = useMemo(() => tryLoadConfig(), []);
+  const config: AppConfig | undefined = configResult.ok ? configResult.config : undefined;
 
+  // One auth instance for the life of the page. The session lives in memory
+  // inside it and is gone on reload, by design.
+  //
+  // Not constructed in demo mode, and not merely unused there: demo mode must
+  // work with no backend and no account at all, so it must not depend on a
+  // Cognito pool being configured or reachable.
+  const auth = useMemo(
+    () => (!demo && config ? new CognitoAuth(config) : undefined),
+    [demo, config],
+  );
+
+  const [user, setUser] = useState<AuthUser>();
   const [api, setApi] = useState<HandoverApiClient>();
-  const [tenancy, setTenancy] = useState<GetTenancyResponse>();
-  const [diff, setDiff] = useState<GetDiffResponse>();
-  const [roomId, setRoomId] = useState<string>();
-  const [marks, setMarks] = useState<readonly MarkedChange[]>([]);
-  const [error, setError] = useState<string>();
+  const [tenancyId, setTenancyId] = useState<string | undefined>(() => {
+    const fromQuery = new URLSearchParams(globalThis.location?.search ?? '').get('tenancy');
+    return fromQuery ?? (isDemoMode() ? DEMO_TENANCY_ID : undefined);
+  });
 
+  const phase: Phase = useMemo(() => {
+    const raw = new URLSearchParams(globalThis.location?.search ?? '').get('phase');
+    return raw === 'MOVEIN' ? 'MOVEIN' : 'MOVEOUT';
+  }, []);
+
+  // The client is built once demo mode or a signed-in session makes it usable.
   useEffect(() => {
     let cancelled = false;
-    void createApiClient().then((client) => {
+    if (!demo && (!config || !user || !auth)) {
+      setApi(undefined);
+      return;
+    }
+    void createApiClient({
+      demo,
+      ...(config ? { baseUrl: config.apiBaseUrl } : {}),
+      ...(auth ? { getIdToken: () => auth.getIdToken() } : {}),
+    }).then((client) => {
       if (!cancelled) setApi(client);
     });
     return () => {
       cancelled = true;
     };
+  }, [auth, config, demo, user]);
+
+  const signOut = useCallback(() => {
+    auth?.signOut();
+    setUser(undefined);
+    setApi(undefined);
+  }, [auth]);
+
+  const selectTenancy = useCallback((id: string) => {
+    setTenancyId(id);
+    // Keep the id in the URL so a reload returns to the same record — the only
+    // place it is kept, since this app uses no localStorage.
+    const url = new URL(globalThis.location.href);
+    url.searchParams.set('tenancy', id);
+    globalThis.history?.replaceState(null, '', url);
   }, []);
-
-  const load = useCallback(async () => {
-    if (!api || !tenancyId) return;
-    try {
-      const [nextTenancy, nextDiff] = await Promise.all([
-        api.getTenancy(tenancyId),
-        api.getDiff(tenancyId),
-      ]);
-      setTenancy(nextTenancy);
-      setDiff(nextDiff);
-      setError(undefined);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [api, tenancyId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const room: RoomDiffView | undefined = diff?.rooms.find((r) => r.roomId === roomId);
-
-  const saveMarks = useCallback(async () => {
-    if (!api || !room || marks.length === 0) return;
-    // Render from the response, so the server's ids for new additions are the
-    // ones on screen — never an optimistic local patch.
-    await api.patchRoomDiff(tenancyId, room.roomId, {
-      changes: [],
-      additions: toDiffAdditions(marks),
-    });
-    setMarks([]);
-    await load();
-  }, [api, load, marks, room, tenancyId]);
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-screen-sm px-4 py-6">
-      {/* Small, persistent, unmistakable. A screenshot of the demo must never
-          be mistakable for real evidence. */}
       {demo ? (
         <p
           data-testid="demo-badge"
@@ -86,93 +94,47 @@ export function App() {
         </p>
       ) : null}
 
-      {error ? (
-        <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {error}
-        </p>
-      ) : null}
-
-      {!tenancyId ? (
-        <p className="text-sm text-slate-600">
-          Open this page with a tenancy id, or append <code>?demo=1</code> to see seeded data.
-        </p>
-      ) : !tenancy || !diff || !api ? (
-        <p className="text-sm text-slate-600">Loading…</p>
-      ) : room ? (
-        <div className="space-y-5">
-          <button
-            type="button"
-            onClick={() => {
-              setRoomId(undefined);
-              setMarks([]);
-            }}
-            className="text-sm font-medium text-sky-700 underline"
-          >
-            ← All rooms
-          </button>
-
-          <h1 className="text-lg font-semibold text-slate-900">{room.roomLabel}</h1>
-
-          {room.before[0] && room.after[0] ? (
-            <CompareSlider
-              before={{
-                url: room.before[0].url,
-                alt: `${room.roomLabel} at move-in`,
-                receivedAt: room.before[0].receivedAt,
-                sha256: room.before[0].sha256,
-              }}
-              after={{
-                url: room.after[0].url,
-                alt: `${room.roomLabel} at move-out`,
-                receivedAt: room.after[0].receivedAt,
-                sha256: room.after[0].sha256,
-              }}
-              overlays={marks
-                .filter((m) => m.box)
-                .map((m) => ({ id: m.id, box: m.box!, label: m.description }))}
-              onImageError={() => void load()}
-            />
-          ) : (
-            <RoomCapture
-              api={api}
-              tenancyId={tenancyId}
-              roomId={room.roomId}
-              roomLabel={room.roomLabel}
-              phase="MOVEOUT"
-              serverPhotoCount={
-                tenancy.rooms.find((r) => r.roomId === room.roomId)?.photoCountMoveout
-              }
-              onUploaded={() => void load()}
-            />
-          )}
-
-          {room.after[0] ? (
-            <ChangeMarker
-              imageUrl={room.after[0].url}
-              imageAlt={`${room.roomLabel} at move-out`}
-              marks={marks}
-              onMarksChange={setMarks}
-            />
-          ) : null}
-
-          {marks.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => void saveMarks()}
-              className="w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white"
-            >
-              Save {marks.length === 1 ? '1 change' : `${marks.length} changes`}
-            </button>
-          ) : null}
+      {/* Configuration is checked before anything else: without it there is no
+          backend to talk to, and a blank screen with a console error is the
+          worst possible way to say so. */}
+      {!demo && !configResult.ok ? (
+        <div className="space-y-2" data-testid="not-configured">
+          <h1 className="text-lg font-semibold text-slate-900">Not configured</h1>
+          <p className="text-sm text-slate-600">
+            This build has no backend configured, so it cannot sign you in or load a
+            tenancy. Copy <code>.env.example</code> to <code>.env.local</code> and set:
+          </p>
+          <ul className="list-inside list-disc text-sm text-slate-700">
+            {configResult.error.missing.map((key) => (
+              <li key={key}>
+                <code>{key}</code>
+              </li>
+            ))}
+          </ul>
+          <p className="text-sm text-slate-600">
+            Or append <code>?demo=1</code> to see the seeded offline walkthrough.
+          </p>
         </div>
+      ) : !demo && !user ? (
+        auth ? <SignIn auth={auth} onSignedIn={setUser} /> : null
+      ) : !api ? (
+        <p className="text-sm text-slate-600">Connecting…</p>
+      ) : !tenancyId ? (
+        <CreateTenancy api={api} onCreated={(created) => selectTenancy(created.tenancyId)} />
       ) : (
-        <ConditionSummary
-          tenancy={tenancy.tenancy}
-          rooms={diff.rooms}
-          phase="MOVEOUT"
-          documents={tenancy.documents}
-          onSelectRoom={setRoomId}
-        />
+        <>
+          {!demo && user ? (
+            <div className="mb-3 flex items-baseline justify-between gap-2 text-xs text-slate-500">
+              <span className="truncate" data-testid="signed-in-as">
+                {user.email}
+              </span>
+              <button type="button" onClick={signOut} className="underline">
+                Sign out
+              </button>
+            </div>
+          ) : null}
+          <TenancyView api={api} tenancyId={tenancyId} phase={phase} onSignOut={signOut} />
+        </>
       )}
     </main>
   );

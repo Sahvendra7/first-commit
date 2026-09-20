@@ -122,9 +122,13 @@ export interface ApiClientConfig {
 }
 
 /**
- * The single place a client is chosen. Demo mode resolves from bundled
- * fixtures with no network calls at all — the venue wifi will fail, and the
- * whole flow has to render anyway.
+ * The single place a client is chosen.
+ *
+ * Demo mode resolves from bundled fixtures with no network calls at all — the
+ * venue wifi will fail, and the whole flow has to render anyway. Production
+ * mode goes to the real API and **never** falls back to a fixture: a demo
+ * response served to a real tenant would be fabricated evidence, so a backend
+ * outage surfaces as an error, not as seeded data.
  */
 export async function createApiClient(
   config: ApiClientConfig = {},

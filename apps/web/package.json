@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@handover/shared": "workspace:*",
+    "amazon-cognito-identity-js": "^6.3.20",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
