@@ -1,3 +1,174 @@
+/*
+ * Handover — design tokens.
+ *
+ * ── Why tokens rather than Tailwind's default palette ───────────────────────
+ *
+ * The product is a rental *evidence ledger*: the impression it has to make is
+ * calm, deliberate and trustworthy. Tailwind's stock `slate` + `sky` reads as
+ * "admin dashboard", which is exactly the register this product must not be in.
+ * So every colour, radius, shadow and duration in the app comes from this file,
+ * and `tailwind.config.js` maps semantic class names (`bg-surface`,
+ * `text-ink-2`, `border-line`) onto it. A component never names a raw hue.
+ *
+ * Channels are stored as space-separated RGB rather than hex so Tailwind's
+ * alpha modifier still works — `bg-ink/70` resolves to `rgb(var(--c-ink)/0.7)`.
+ *
+ * ── The palette ─────────────────────────────────────────────────────────────
+ *
+ * `paper` is a warm off-white, not a cool grey: the archival register the
+ * product wants comes mostly from that one decision. `brand` is a deep
+ * teal-ink — serious without being corporate-blue, and dark enough to carry
+ * white text at AA on every surface here. `accent` is an ochre borrowed from
+ * archival markup; it is reserved for *evidence marks* (overlay boxes, the
+ * numbers beside a recorded change) so the colour means one thing throughout.
+ *
+ * ── Type ────────────────────────────────────────────────────────────────────
+ *
+ * There is no webfont, deliberately. The service worker's cache whitelist is
+ * same-origin build output only (`public/sw.js`), so a hosted font would be
+ * re-fetched on every cold load and would flash on an offline launch of the
+ * installed PWA — on the phone at the property, which is the primary device.
+ * The editorial voice comes instead from the platform serif (`ui-serif`, i.e.
+ * New York / Noto Serif / Georgia) used for display sizes only, with a tight
+ * negative tracking that the system sans could not carry. Identity is carried
+ * by the mark, the palette and the layout, none of which cost a round trip.
+ */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --c-paper: 246 245 241;
+    --c-paper-deep: 237 235 228;
+    --c-surface: 255 255 255;
+    --c-sunk: 250 249 246;
+
+    /* Hairlines */
+    --c-line: 228 225 216;
+    --c-line-strong: 209 204 191;
+
+    /* Text */
+    --c-ink: 20 25 27;
+    --c-ink-2: 61 74 78;
+    --c-ink-3: 104 118 123;
+    --c-ink-4: 148 160 164;
+
+    /* Brand */
+    --c-brand: 14 59 60;
+    --c-brand-hi: 23 89 90;
+    --c-brand-tint: 231 239 238;
+    --c-brand-line: 190 214 211;
+
+    /* Evidence marks */
+    --c-accent: 178 96 58;
+    --c-accent-tint: 250 239 231;
+
+    /* Status */
+    --c-ok: 39 100 74;
+    --c-ok-tint: 230 240 234;
+    --c-warn: 132 92 16;
+    --c-warn-tint: 251 240 218;
+    --c-danger: 150 41 41;
+    --c-danger-tint: 250 234 234;
+
+    /* Dark surface — the hero, and nothing else */
+    --c-night: 11 21 23;
+    --c-night-2: 19 36 36;
+
+    /* Motion. One easing for the whole app; only the duration varies. */
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-1: 120ms;
+    --dur-2: 220ms;
+    --dur-3: 420ms;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: rgb(var(--c-paper));
+    color: rgb(var(--c-ink));
+    font-feature-settings: 'kern' 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * Tabular figures wherever a number is a fact rather than prose: money,
+   * photo counts, digests, timestamps. Columns of rupees that do not line up
+   * read as sloppy on a document the tenant is meant to trust.
+   */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * One focus ring for the whole app, on the semantic `:focus-visible` rather
+   * than `:focus`, so a mouse press on a button does not leave a ring behind
+   * but a Tab key press always does.
+   */
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-brand-hi));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /*
+   * Honour the OS setting rather than shipping a toggle nobody finds. Motion
+   * in this app is decoration on top of layout that is already complete, so
+   * collapsing every transition to ~0 changes nothing but the entrance.
+   *
+   * `0.01ms` rather than `0` keeps `transitionend`/`animationend` firing, which
+   * some entrance animations below use to clean up.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /*
+   * Entrance for a screen's content. Deliberately small — 8px and 220ms — so
+   * it reads as the page settling rather than as an animation.
+   */
+  .enter {
+    animation: enter var(--dur-3) var(--ease) both;
+  }
+
+  .enter-2 {
+    animation: enter var(--dur-3) var(--ease) 60ms both;
+  }
+
+  @keyframes enter {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* A hairline that fades out at both ends — used to separate bands. */
+  .rule-soft {
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--c-line-strong)) 12%,
+      rgb(var(--c-line-strong)) 88%,
+      transparent
+    );
+    height: 1px;
+  }
+}

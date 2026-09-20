@@ -8,10 +8,12 @@
          change description on a cracked phone screen needs it more than the
          drag targets need stability. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f172a" />
+    <!-- Matches `--c-brand` in src/index.css: the installed PWA's status bar is
+         part of the product surface, not the browser's. -->
+    <meta name="theme-color" content="#0e3b3c" />
     <meta
       name="description"
-      content="Record the condition of a rented property at move-in and move-out, with timestamped, hashed photographs."
+      content="Rental evidence that stays organized from move-in to deposit recovery. Timestamped, hashed photographs, paired before and after."
     />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/icons/icon-192.png" type="image/png" />
@@ -20,7 +22,7 @@
     <meta name="apple-mobile-web-app-title" content="Handover" />
     <title>Handover</title>
   </head>
-  <body class="bg-slate-50">
+  <body class="bg-paper font-sans antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
