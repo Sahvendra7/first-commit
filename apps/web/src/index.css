@@ -97,6 +97,39 @@
   }
 
   /*
+   * A quieter scrollbar on the desktop shell, carried over from the `main`
+   * restyle but expressed in tokens rather than the raw greys it used — a
+   * component, or a rule, never names a hue in this app. Cosmetic only: the
+   * track stays transparent so nothing shifts when it appears, and touch
+   * platforms ignore all of it.
+   */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--c-line-strong));
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--c-ink-4));
+  }
+
+  /* Firefox, which has no pseudo-elements for this. */
+  @supports (scrollbar-color: auto) {
+    html {
+      scrollbar-color: rgb(var(--c-line-strong)) transparent;
+      scrollbar-width: thin;
+    }
+  }
+
+  /*
    * Tabular figures wherever a number is a fact rather than prose: money,
    * photo counts, digests, timestamps. Columns of rupees that do not line up
    * read as sloppy on a document the tenant is meant to trust.

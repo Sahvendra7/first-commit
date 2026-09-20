@@ -32,6 +32,7 @@ import {
   BucketEncryption,
   ObjectOwnership,
   StorageClass,
+  HttpMethods,
 } from 'aws-cdk-lib/aws-s3';
 import { AnyPrincipal, Effect, PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import type { StackProps } from 'aws-cdk-lib';
@@ -142,6 +143,16 @@ export class DataStack extends Stack {
               transitionAfter: Duration.days(90),
             },
           ],
+        },
+      ],
+
+      // Allow browser uploads directly via presigned POST
+      cors: [
+        {
+          allowedMethods: [HttpMethods.POST],
+          allowedOrigins: ['*'],
+          allowedHeaders: ['*'],
+          maxAge: 3600,
         },
       ],
     });

@@ -82,7 +82,7 @@ export const DEMO_PHOTOS: readonly PhotoRef[] = DEMO_ROOMS.flatMap((room) =>
   ),
 );
 
-const CONDITION_REPORT: DocumentRef = {
+export const demoConditionReport: DocumentRef = {
   documentId: 'doc_demo_condition',
   docType: 'CONDITION_REPORT',
   sha256: fixtureDigest('doc_demo_condition'),
@@ -116,7 +116,11 @@ export function demoDemandLetter(documentId: string): DocumentRef {
 export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
   tenancy: {
     tenancyId: DEMO_TENANCY_ID,
-    status: 'AWAITING_REFUND',
+    // web-contract §8 seeds this tenancy mid-flow, at MOVEOUT_COMPLETE, so the
+    // demo can reach the compare slider, the review and the letter without a
+    // network — which is the whole reason the demo exists. Capture still works
+    // from here: the demo client increments the room counters on upload.
+    status: 'MOVEOUT_COMPLETE',
     addressLine: '4B, Nandi Residency, 12th Main',
     city: 'Bengaluru',
     stateCode: 'KA',
@@ -133,6 +137,11 @@ export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
     roomId: room.roomId,
     label: room.label,
     orderIndex: room.orderIndex,
+    // These are the server's counters, and the server's counters are the only
+    // thing that says evidence exists (risk R5). They must agree with
+    // `photos` below: a fixture that serves 16 PhotoRefs while reporting 0
+    // makes the capture screen say "no photographs recorded" on the same
+    // record whose room card shows eight pairs.
     photoCountMovein: DEMO_PAIR_INDEXES.length,
     photoCountMoveout: DEMO_PAIR_INDEXES.length,
   })),
@@ -145,5 +154,8 @@ export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
     changes: [],
     reviewReason: 'AI_DISABLED',
   })),
-  documents: [CONDITION_REPORT],
+  // web-contract §8: "one CONDITION_REPORT, created at move-in". The job
+  // handler that appends it on DONE is idempotent, so seeding it here does not
+  // produce a duplicate when the walkthrough re-runs the report.
+  documents: [demoConditionReport],
 });
