@@ -4,11 +4,27 @@
  * Presentation only: it derives everything from the tenancy status it is given
  * and holds no state of its own, so it cannot disagree with the record. The
  * status list it maps is `TENANCY_STATUSES` in `packages/shared` (§6.2).
+ *
+ * The drawing is `ui/Stepper`; what stays here is the one thing that is
+ * domain knowledge rather than presentation — which status belongs to which
+ * stage.
  */
 import type { TenancyStatus } from '@handover/shared';
+import { Stepper, type Step } from '../../ui/index.js';
 
-/** The stages, in the order a tenancy passes through them. */
-const STAGES = ['Move-in', 'Condition', 'Move-out', 'Recovery'] as const;
+/**
+ * The stages, in the order a tenancy passes through them.
+ *
+ * The ids are the lowercased labels because that is what the tests address
+ * them by, and because an id that is derivable from the label cannot drift
+ * from it.
+ */
+const STAGES: readonly Step[] = [
+  { id: 'move-in', label: 'Move-in' },
+  { id: 'condition', label: 'Condition' },
+  { id: 'move-out', label: 'Move-out' },
+  { id: 'recovery', label: 'Recovery' },
+];
 
 type StageIndex = 0 | 1 | 2 | 3;
 
@@ -26,61 +42,24 @@ function stageFor(status: TenancyStatus): StageIndex {
     case 'MOVEOUT_COMPLETE':
       return 2;
     default:
-      // AWAITING_REFUND, OVERDUE, CLOSED — the deposit-recovery end of the path.
+      // AWAITING_REFUND, OVERDUE, RESOLVED — the deposit-recovery end of the path.
       return 3;
   }
 }
 
-import { Fragment } from 'react';
-
-export function JourneyStages({ status }: { readonly status: TenancyStatus }) {
-  const current = stageFor(status);
+export function JourneyStages({
+  status,
+  className,
+}: {
+  readonly status: TenancyStatus;
+  readonly className?: string;
+}) {
   return (
-    <nav aria-label="Progress" data-testid="journey-stages" className="mb-6 rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
-      <div className="flex items-center justify-between">
-        {STAGES.map((label, i) => {
-          const done = i < current;
-          const active = i === current;
-          const isLast = i === STAGES.length - 1;
-          return (
-            <Fragment key={label}>
-              <div
-                data-testid={`stage-${label.toLowerCase()}`}
-                aria-current={active ? 'step' : undefined}
-                className="flex flex-col items-center min-h-11 justify-center"
-              >
-                {done ? (
-                  <div className="w-6 h-6 rounded-full bg-[#1a1a1a] flex items-center justify-center">
-                    <span className="text-white text-xs font-bold">✓</span>
-                  </div>
-                ) : active ? (
-                  <div className="w-6 h-6 rounded-full bg-[#1a1a1a] ring-4 ring-gray-200"></div>
-                ) : (
-                  <div className="w-6 h-6 rounded-full bg-gray-200"></div>
-                )}
-                <span
-                  className={
-                    active
-                      ? 'mt-2 text-xs font-semibold text-[#1a1a1a]'
-                      : done
-                        ? 'mt-2 text-xs font-medium text-gray-600'
-                        : 'mt-2 text-xs text-gray-400'
-                  }
-                >
-                  {label}
-                </span>
-              </div>
-              {!isLast && (
-                <div
-                  className={`flex-1 h-0.5 mx-2 ${
-                    i < current ? 'bg-[#1a1a1a]' : 'bg-gray-200'
-                  }`}
-                />
-              )}
-            </Fragment>
-          );
-        })}
-      </div>
-    </nav>
+    <Stepper
+      steps={STAGES}
+      currentIndex={stageFor(status)}
+      data-testid="journey-stages"
+      {...(className ? { className } : {})}
+    />
   );
 }

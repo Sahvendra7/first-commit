@@ -1,16 +1,29 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { createApiClient, isDemoMode, type HandoverApiClient } from './lib/api-client.js';
 import { tryLoadConfig, type AppConfig } from './lib/config.js';
 import { phaseOverrideFrom } from './lib/phase.js';
-import { CognitoAuth, type AuthUser } from './lib/auth/cognito-auth.js';
+import type { AuthUser, CognitoAuth } from './lib/auth/cognito-auth.js';
 import { DEMO_TENANCY_ID } from './lib/demo/index.js';
-import { SignIn } from './features/auth/SignIn.js';
+import { Landing } from './features/landing/Landing.js';
 import { CreateTenancy } from './features/tenancy/CreateTenancy.js';
 import { TenancyView } from './features/tenancy/TenancyView.js';
+import { AppShell, Banner, Button, Section } from './ui/index.js';
 
 /**
- * Application shell: configuration, the auth boundary, and which tenancy is on
- * screen.
+ * Split out of the main chunk, and `amazon-cognito-identity-js` with it.
+ *
+ * That library is ~250KB of the bundle, and demo mode — the path a first-time
+ * visitor and every demo takes — never constructs it. Statically importing the
+ * sign-in screen pulled the whole SRP implementation into the first paint of a
+ * page that has no account and no backend. Now the demo never downloads it,
+ * and production fetches it at the moment the visitor asks to sign in.
+ */
+const SignIn = lazy(() =>
+  import('./features/auth/SignIn.js').then((m) => ({ default: m.SignIn })),
+);
+
+/**
+ * Application shell: configuration, the auth boundary, and which screen is on.
  *
  * Demo mode short-circuits both gates — it needs no backend and no account,
  * which is the entire point of it (web-contract §8). Production mode needs
@@ -20,6 +33,14 @@ import { TenancyView } from './features/tenancy/TenancyView.js';
  * The tenancy id lives in the query string. There is no `localStorage` in this
  * app, and §7 defines no list endpoint, so a tenancy is reached by id or it is
  * created.
+ *
+ * ── Why there is now a landing screen in front of all of it ─────────────────
+ *
+ * Both entry paths used to open on a screen written for someone who already
+ * knew what the product was: `?demo=1` went straight to a condition summary,
+ * production went straight to a password field. The landing is the answer to
+ * "what is this?", and it is skipped for anyone past that question — a URL
+ * carrying a `tenancy`, or a signed-in session with a record to make.
  */
 export function App() {
   const demo = isDemoMode();
@@ -31,18 +52,34 @@ export function App() {
   //
   // Not constructed in demo mode, and not merely unused there: demo mode must
   // work with no backend and no account at all, so it must not depend on a
-  // Cognito pool being configured or reachable.
-  const auth = useMemo(
-    () => (!demo && config ? new CognitoAuth(config) : undefined),
-    [demo, config],
-  );
+  // Cognito pool being configured or reachable. That is now enforced by the
+  // module graph rather than by a conditional — the import below only happens
+  // outside demo mode, so the Cognito library is never even fetched there.
+  const [auth, setAuth] = useState<CognitoAuth>();
+
+  useEffect(() => {
+    if (demo || !config) {
+      setAuth(undefined);
+      return;
+    }
+    let cancelled = false;
+    void import('./lib/auth/cognito-auth.js').then(({ CognitoAuth }) => {
+      if (!cancelled) setAuth(new CognitoAuth(config));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [demo, config]);
 
   const [user, setUser] = useState<AuthUser>();
   const [api, setApi] = useState<HandoverApiClient>();
   const [tenancyId, setTenancyId] = useState<string | undefined>(() => {
-    const fromQuery = new URLSearchParams(globalThis.location?.search ?? '').get('tenancy');
-    return fromQuery ?? (isDemoMode() ? DEMO_TENANCY_ID : undefined);
+    // Unlike before, demo mode does not default to the seeded id: the landing
+    // is the demo's front door too, and its CTA is what opens the record.
+    return new URLSearchParams(globalThis.location?.search ?? '').get('tenancy') ?? undefined;
   });
+  /** False until the visitor has asked to go past the landing screen. */
+  const [entered, setEntered] = useState(false);
 
   /*
    * Only an explicit override. The phase itself is derived from the tenancy's
@@ -78,6 +115,7 @@ export function App() {
     auth?.signOut();
     setUser(undefined);
     setApi(undefined);
+    setEntered(false);
   }, [auth]);
 
   const selectTenancy = useCallback((id: string) => {
@@ -89,81 +127,190 @@ export function App() {
     globalThis.history?.replaceState(null, '', url);
   }, []);
 
-  return (
-    <main className="mx-auto min-h-screen w-full max-w-screen-md bg-[#fafafa]">
-      {/* The product header. It names the app and says in one line what the app
-          is for, so the first screen is never an unlabelled table of rooms. */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-4">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl font-bold tracking-tight text-[#1a1a1a]">Handover</h1>
-          {demo ? (
-            <span
-              data-testid="demo-badge"
-              className="shrink-0 rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-violet-700"
-            >
-              Demo
-            </span>
-          ) : null}
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500">
-          Rental evidence, organized from move-in to deposit recovery.
-        </p>
-        {demo ? (
-          <p className="mt-1 text-xs text-gray-400">
-            Seeded walkthrough — not a real tenancy. Nothing here is sent anywhere.
-          </p>
-        ) : null}
-      </header>
+  const barActions = demo ? (
+    <a
+      href="/"
+      className="rounded-lg px-2 py-1.5 text-sm font-medium text-ink-2 underline-offset-4 hover:bg-paper-deep hover:underline"
+    >
+      Leave demo
+    </a>
+  ) : user ? (
+    <>
+      <span className="hidden max-w-[16ch] truncate text-ink-3 sm:inline" data-testid="signed-in-as">
+        {user.email}
+      </span>
+      <Button tone="quiet" size="sm" onClick={signOut}>
+        Sign out
+      </Button>
+    </>
+  ) : null;
 
-      <div className="px-6 py-6">
-        {/* Configuration is checked before anything else: without it there is no
-            backend to talk to, and a blank screen with a console error is the
-            worst possible way to say so. */}
-        {!demo && !configResult.ok ? (
-          <div className="space-y-2 rounded-2xl bg-white p-6 shadow-sm border border-gray-100" data-testid="not-configured">
-            <h1 className="text-lg font-semibold text-[#1a1a1a]">Not configured</h1>
-            <p className="text-sm text-gray-600">
-              This build has no backend configured, so it cannot sign you in or load a
-              tenancy. Copy <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">.env.example</code> to <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">.env.local</code> and set:
-            </p>
-            <ul className="list-inside list-disc text-sm text-gray-600">
-              {configResult.error.missing.map((key) => (
-                <li key={key}>
-                  <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">{key}</code>
-                </li>
-              ))}
-            </ul>
-            <p className="text-sm text-gray-600">
-              Or append <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">?demo=1</code> to see the seeded offline walkthrough.
-            </p>
-          </div>
-        ) : !demo && !user ? (
-          auth ? <SignIn auth={auth} onSignedIn={setUser} /> : null
-        ) : !api ? (
-          <p className="text-sm text-gray-500">Connecting…</p>
-        ) : !tenancyId ? (
-          <CreateTenancy api={api} onCreated={(created) => selectTenancy(created.tenancyId)} />
+  /* ── The landing screen, and what its buttons do here ──────────────────── */
+
+  const showLanding = !tenancyId && !entered && (demo || !user);
+
+  if (showLanding) {
+    return (
+      <AppShell width="full" demo={demo} barActions={barActions}>
+        <Landing
+          demo={demo}
+          {...(demo
+            ? {
+                primaryLabel: 'Open the demo record',
+                onPrimary: () => selectTenancy(DEMO_TENANCY_ID),
+                // Leaving the demo lives in the app bar. The hero's second
+                // button should take someone further in, not out.
+                secondaryLabel: 'How it works',
+                secondaryHref: '#how-it-works',
+              }
+            : configResult.ok
+              ? {
+                  primaryLabel: 'Start a record',
+                  onPrimary: () => setEntered(true),
+                  secondaryLabel: 'Explore the demo',
+                  secondaryHref: '?demo=1',
+                }
+              : {
+                  // Nothing to start against, so the demo becomes the primary
+                  // path and the reason is stated rather than implied.
+                  primaryLabel: 'Explore the demo',
+                  onPrimary: () => {
+                    globalThis.location.assign('?demo=1');
+                  },
+                  notice: <NotConfigured missing={configResult.ok ? [] : configResult.error.missing} />,
+                })}
+        />
+      </AppShell>
+    );
+  }
+
+  /* ── Past the landing ─────────────────────────────────────────────────── */
+
+  if (!demo && !configResult.ok) {
+    return (
+      <AppShell width="measure">
+        <NotConfigured missing={configResult.error.missing} onPaper />
+      </AppShell>
+    );
+  }
+
+  if (!demo && !user) {
+    return (
+      <AppShell width="measure" barActions={barActions}>
+        {auth ? (
+          <Suspense fallback={<AuthSkeleton />}>
+            <SignIn auth={auth} onSignedIn={setUser} />
+          </Suspense>
         ) : (
-          <>
-            {!demo && user ? (
-              <div className="mb-3 rounded-xl bg-white px-4 py-2.5 border border-gray-100 flex items-baseline justify-between gap-2 text-xs text-gray-500">
-                <span className="truncate" data-testid="signed-in-as">
-                  {user.email}
-                </span>
-                <button type="button" onClick={signOut} className="text-gray-500 hover:text-[#1a1a1a] transition-colors underline">
-                  Sign out
-                </button>
-              </div>
-            ) : null}
-            <TenancyView
-              api={api}
-              tenancyId={tenancyId}
-              {...(phaseOverride ? { phaseOverride } : {})}
-              onSignOut={signOut}
-            />
-          </>
+          // The Cognito module is still being fetched. A skeleton in the form's
+          // shape rather than a spinner, so the screen does not jump when it
+          // arrives.
+          <AuthSkeleton />
         )}
+      </AppShell>
+    );
+  }
+
+  if (!api) {
+    return (
+      <AppShell width="measure" demo={demo} barActions={barActions}>
+        <p className="text-sm text-ink-2">Connecting…</p>
+      </AppShell>
+    );
+  }
+
+  if (!tenancyId) {
+    return (
+      <AppShell width="measure" demo={demo} barActions={barActions}>
+        <CreateTenancy api={api} onCreated={(created) => selectTenancy(created.tenancyId)} />
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell width="record" demo={demo} barActions={barActions}>
+      <TenancyView
+        api={api}
+        tenancyId={tenancyId}
+        {...(phaseOverride ? { phaseOverride } : {})}
+        onSignOut={signOut}
+      />
+    </AppShell>
+  );
+}
+
+/**
+ * Configuration is checked before anything else: without it there is no
+ * backend to talk to, and a blank screen with a console error is the worst
+ * possible way to say so.
+ */
+function NotConfigured({
+  missing,
+  onPaper,
+}: {
+  readonly missing: readonly string[];
+  readonly onPaper?: boolean;
+}) {
+  const body = (
+    <>
+      <p>
+        This build has no backend configured, so it cannot sign you in or load a record. Copy{' '}
+        <code className="font-mono">.env.example</code> to{' '}
+        <code className="font-mono">.env.local</code> and set:
+      </p>
+      <ul className="mt-1.5 list-inside list-disc">
+        {missing.map((key) => (
+          <li key={key}>
+            <code className="font-mono">{key}</code>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+
+  return onPaper ? (
+    <Section
+      headingLevel={1}
+      eyebrow="Setup"
+      title="Not configured"
+      headingId="not-configured-heading"
+      data-testid="not-configured"
+    >
+      <div className="text-sm text-ink-2">{body}</div>
+      <p className="mt-3 text-sm text-ink-2">
+        Or append <code className="font-mono">?demo=1</code> to see the seeded offline
+        walkthrough.
+      </p>
+    </Section>
+  ) : (
+    <Banner
+      role="status"
+      tone="warn"
+      title="Not configured"
+      data-testid="not-configured"
+      className="!bg-white/10 !border-white/20 !border-l-warn [&_*]:!text-white/75 [&_strong]:!text-white"
+    >
+      {body}
+    </Banner>
+  );
+}
+
+/** The sign-in form's footprint, while its chunk is on the wire. */
+function AuthSkeleton() {
+  return (
+    <div
+      className="mx-auto w-full max-w-measure rounded-3xl border border-line bg-surface p-6 shadow-md sm:p-8"
+      aria-busy="true"
+    >
+      <span className="sr-only">Loading sign in…</span>
+      <div className="h-9 w-9 animate-pulse rounded-xl bg-paper-deep" />
+      <div className="mt-5 h-8 w-40 animate-pulse rounded-lg bg-paper-deep" />
+      <div className="mt-3 h-4 w-full animate-pulse rounded bg-paper-deep" />
+      <div className="mt-6 space-y-4">
+        <div className="h-16 animate-pulse rounded-xl bg-paper-deep" />
+        <div className="h-16 animate-pulse rounded-xl bg-paper-deep" />
+        <div className="h-14 animate-pulse rounded-xl bg-paper-deep" />
       </div>
-    </main>
+    </div>
   );
 }

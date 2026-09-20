@@ -16,7 +16,7 @@
  */
 import type { ApiErrorCode } from '@handover/shared';
 import { ApiError, NetworkError } from './api-client.js';
-import { AuthError } from './auth/cognito-auth.js';
+import { AuthError } from './auth/auth-error.js';
 
 export interface UserFacingError {
   readonly title: string;

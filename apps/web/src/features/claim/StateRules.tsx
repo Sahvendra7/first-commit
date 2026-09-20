@@ -26,6 +26,7 @@
  * none of it claims legal admissibility or a guaranteed outcome.
  */
 import type { GetStateRulesResponse } from '@handover/shared';
+import { Banner } from '../../ui/index.js';
 
 export interface StateRulesProps {
   readonly rules: GetStateRulesResponse;
@@ -41,11 +42,17 @@ function formatBps(bps: number): string {
 export function StateRules({ rules, className }: StateRulesProps) {
   return (
     <section
-      className={className}
+      className={[
+        'rounded-2xl border border-line bg-sunk p-5 lg:sticky lg:top-20',
+        className ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       data-testid="state-rules"
       aria-labelledby="state-rules-heading"
     >
-      <h2 id="state-rules-heading" className="text-sm font-semibold text-slate-900">
+      <p className="text-micro font-semibold uppercase text-ink-3">Reference</p>
+      <h2 id="state-rules-heading" className="mt-1 text-heading font-semibold text-ink">
         Deposit rules in {rules.stateName}
       </h2>
 
@@ -55,59 +62,62 @@ export function StateRules({ rules, className }: StateRulesProps) {
         one the KA seed is actually in, and it is louder on purpose.
       */}
       {rules.lastReviewedAt ? (
-        <p className="mt-1 text-xs text-slate-500" data-testid="rules-reviewed">
+        <p className="tnum mt-1.5 text-xs text-ink-3" data-testid="rules-reviewed">
           Reviewed {rules.lastReviewedAt}.
         </p>
       ) : (
-        <p
-          className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-900"
+        <Banner
+          role="status"
+          tone="warn"
+          className="mt-3 !text-xs"
+          title="Draft — pending legal review"
           data-testid="rules-unreviewed"
         >
-          <strong>Draft — pending legal review.</strong> These figures have not been
-          checked by a lawyer. Confirm anything you rely on before you act on it.
-        </p>
+          These figures have not been checked by a lawyer. Confirm anything you rely on
+          before you act on it.
+        </Banner>
       )}
 
-      <dl className="mt-3 space-y-2 text-sm">
-        <div className="flex flex-wrap justify-between gap-x-3">
-          <dt className="text-slate-600">Refund window</dt>
-          <dd className="font-medium text-slate-900" data-testid="refund-window">
+      <dl className="mt-4 divide-y divide-line text-sm">
+        <div className="flex flex-wrap justify-between gap-x-3 py-2">
+          <dt className="text-ink-3">Refund window</dt>
+          <dd className="font-semibold text-ink" data-testid="refund-window">
             {rules.refundWindowDays > 0
               ? `${rules.refundWindowDays} days`
               : 'No statutory window asserted'}
           </dd>
         </div>
 
-        <div className="flex flex-wrap justify-between gap-x-3">
-          <dt className="text-slate-600">Deposit cap</dt>
+        <div className="flex flex-wrap justify-between gap-x-3 py-2">
+          <dt className="text-ink-3">Deposit cap</dt>
           {/* 0 is "none asserted". Never "the cap is zero months". */}
-          <dd className="font-medium text-slate-900" data-testid="deposit-cap">
+          <dd className="font-semibold text-ink" data-testid="deposit-cap">
             {rules.depositCapMonths > 0
               ? `${rules.depositCapMonths} months' rent`
               : 'No statutory cap asserted'}
           </dd>
         </div>
 
-        <div className="flex flex-wrap justify-between gap-x-3">
-          <dt className="text-slate-600">Statutory interest</dt>
+        <div className="flex flex-wrap justify-between gap-x-3 py-2">
+          <dt className="text-ink-3">Statutory interest</dt>
           {/* 0 is "no rate asserted". Never "0%", which claims a rate exists. */}
-          <dd className="font-medium text-slate-900" data-testid="statutory-interest">
+          <dd className="font-semibold text-ink" data-testid="statutory-interest">
             {rules.statutoryInterestBps > 0
               ? formatBps(rules.statutoryInterestBps)
               : 'No statutory rate asserted'}
           </dd>
         </div>
 
-        <div className="flex flex-wrap justify-between gap-x-3">
-          <dt className="text-slate-600">Model Tenancy Act</dt>
-          <dd className="font-medium text-slate-900" data-testid="mta-adopted">
+        <div className="flex flex-wrap justify-between gap-x-3 py-2">
+          <dt className="text-ink-3">Model Tenancy Act</dt>
+          <dd className="font-semibold text-ink" data-testid="mta-adopted">
             {rules.mtaAdopted ? 'Adopted' : 'Not adopted'}
           </dd>
         </div>
 
-        <div className="flex flex-wrap justify-between gap-x-3">
-          <dt className="text-slate-600">Forum</dt>
-          <dd className="text-right font-medium text-slate-900" data-testid="authority">
+        <div className="flex flex-wrap justify-between gap-x-3 py-2">
+          <dt className="text-ink-3">Forum</dt>
+          <dd className="text-right font-semibold text-ink" data-testid="authority">
             {rules.authorityName}
           </dd>
         </div>
@@ -115,29 +125,29 @@ export function StateRules({ rules, className }: StateRulesProps) {
 
       {rules.escalationSteps.length > 0 ? (
         <div className="mt-4" data-testid="escalation-steps">
-          <h3 className="text-sm font-semibold text-slate-900">If the deposit is withheld</h3>
-          <ol className="mt-2 space-y-2">
+          <h3 className="text-sm font-semibold text-ink">If the deposit is withheld</h3>
+          <ol className="mt-2.5 space-y-2">
             {[...rules.escalationSteps]
               .sort((a, b) => a.order - b.order)
               .map((step) => (
                 <li
                   key={step.order}
-                  className="rounded border border-slate-200 p-2 text-sm"
+                  className="rounded-xl border border-line bg-surface p-3 text-sm"
                   data-testid={`escalation-${step.order}`}
                 >
-                  <p className="font-medium text-slate-900">
+                  <p className="font-semibold text-ink">
                     {step.label}
                     {/*
                       `afterDays: 0` means "straight away", not "after 0 days".
                       Same absence-versus-value rule as the figures above.
                     */}
                     {step.afterDays !== undefined && step.afterDays > 0 ? (
-                      <span className="ml-1 font-normal text-slate-500">
+                      <span className="ml-1 font-normal text-ink-3">
                         · after {step.afterDays} days
                       </span>
                     ) : null}
                   </p>
-                  <p className="mt-0.5 text-slate-700">{step.description}</p>
+                  <p className="mt-1 text-ink-2">{step.description}</p>
                 </li>
               ))}
           </ol>
@@ -146,8 +156,8 @@ export function StateRules({ rules, className }: StateRulesProps) {
 
       {rules.statuteRefs.length > 0 ? (
         <div className="mt-4" data-testid="statute-refs">
-          <h3 className="text-sm font-semibold text-slate-900">Sources</h3>
-          <ul className="mt-1 space-y-1 text-xs text-slate-600">
+          <h3 className="text-sm font-semibold text-ink">Sources</h3>
+          <ul className="mt-1.5 space-y-1.5 text-xs text-ink-2">
             {rules.statuteRefs.map((ref) => (
               <li key={ref.citation}>
                 {ref.url ? (
@@ -155,14 +165,14 @@ export function StateRules({ rules, className }: StateRulesProps) {
                     href={ref.url}
                     target="_blank"
                     rel="noreferrer noopener"
-                    className="text-sky-700 underline"
+                    className="font-medium text-brand-hi underline underline-offset-2"
                   >
                     {ref.citation}
                   </a>
                 ) : (
-                  <span className="font-medium text-slate-800">{ref.citation}</span>
+                  <span className="font-medium text-ink">{ref.citation}</span>
                 )}
-                <span className="block text-slate-500">{ref.title}</span>
+                <span className="block text-ink-3">{ref.title}</span>
               </li>
             ))}
           </ul>
@@ -173,7 +183,7 @@ export function StateRules({ rules, className }: StateRulesProps) {
         The product is tamper-evident evidence. It is not legal advice, and this
         line is the one place a tenant is told so in as many words.
       */}
-      <p className="mt-4 text-xs text-slate-500">
+      <p className="mt-5 border-t border-line pt-3 text-xs text-ink-3">
         This is reference information, not legal advice.
       </p>
     </section>

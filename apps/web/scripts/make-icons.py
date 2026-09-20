@@ -13,9 +13,11 @@ once is exactly the "unnecessary complexity" the brief rules out. PNG is a
 container around zlib-compressed scanlines, which `zlib` and `struct` already
 cover.
 
-The mark is a before/after frame: one rounded rectangle split down the middle,
-the right half tinted. That is the product — two photographs of the same view,
-side by side — and it stays legible at 48px.
+The mark is the one in `src/ui/Logo.tsx`, on the same 32-unit grid: two offset
+frames — the view as it was, and the same view later — with a seal where the
+two are held against each other. The web mark draws the back frame dashed; this
+one draws it in a lighter tone instead, because a 2.5-unit dash is under a pixel
+once a launcher has scaled the icon to 48px and the frame simply disappears.
 
     python3 scripts/make-icons.py
 """
@@ -30,28 +32,48 @@ from pathlib import Path
 # corners and the divider get clean edges without an AA implementation.
 SUPERSAMPLE = 4
 
-SLATE_900 = (15, 23, 42)
+# The palette, from `src/index.css`. Kept as literals rather than parsed out of
+# the CSS: four numbers that change once a year do not justify a parser, and a
+# wrong colour here is visible in the diff.
+BRAND = (14, 59, 60)
 WHITE = (255, 255, 255)
-SKY_300 = (125, 211, 252)
+BRAND_LINE = (190, 214, 211)
+ACCENT = (178, 96, 58)
 
 OUT_DIR = Path(__file__).resolve().parent.parent / "public" / "icons"
 
+# The mark's geometry, in the 32-unit grid `Logo.tsx` uses, as fractions of the
+# canvas. Changing the SVG and not these is the drift this comment exists to
+# prevent — the two are checked against each other by eye, once, here.
+G = 32.0
+BACK_FRAME = (6.75 / G, 8.75 / G, 20.25 / G, 20.25 / G)
+FRONT_FRAME = (11.75 / G, 12.75 / G, 25.25 / G, 24.25 / G)
+SEAL = (18.5 / G, 18.5 / G, 2.75 / G)
+FRAME_RADIUS = 2.0 / G
+STROKE = 1.5 / G
 
-def rounded_rect_contains(x: float, y: float, x0: float, y0: float, x1: float, y1: float, r: float) -> bool:
-    """True when (x, y) is inside a rounded rectangle."""
+
+def in_rounded_rect(x: float, y: float, x0: float, y0: float, x1: float, y1: float, r: float) -> bool:
+    """True when (x, y) lies inside a rounded rectangle."""
     if x < x0 or x > x1 or y < y0 or y > y1:
         return False
-    for cx, cy in ((x0 + r, y0 + r), (x1 - r, y0 + r), (x0 + r, y1 - r), (x1 - r, y1 - r)):
-        # Only the corner quadrants need the radius test.
-        if (x < x0 + r or x > x1 - r) and (y < y0 + r or y > y1 - r):
-            if (x - cx) ** 2 + (y - cy) ** 2 > r * r:
-                # Keep checking the other corners; a point outside this corner's
-                # circle may still be inside another quadrant's.
-                continue
-            return True
-    if (x < x0 + r or x > x1 - r) and (y < y0 + r or y > y1 - r):
-        return False
-    return True
+    r = min(r, (x1 - x0) / 2, (y1 - y0) / 2)
+    if r <= 0:
+        return True
+    # Clamp the point to the inner rectangle whose corners are the arc centres;
+    # the distance to that clamped point is the distance to the shape's edge.
+    cx = min(max(x, x0 + r), x1 - r)
+    cy = min(max(y, y0 + r), y1 - r)
+    return (x - cx) ** 2 + (y - cy) ** 2 <= r * r
+
+
+def on_frame(x: float, y: float, rect: tuple[float, float, float, float], stroke: float) -> bool:
+    """True on the stroked outline of a rounded rectangle, centred on the path."""
+    x0, y0, x1, y1 = rect
+    half = stroke / 2
+    outer = in_rounded_rect(x, y, x0 - half, y0 - half, x1 + half, y1 + half, FRAME_RADIUS + half)
+    inner = in_rounded_rect(x, y, x0 + half, y0 + half, x1 - half, y1 - half, max(0.0, FRAME_RADIUS - half))
+    return outer and not inner
 
 
 def render(size: int, safe_zone: float) -> bytes:
@@ -63,57 +85,47 @@ def render(size: int, safe_zone: float) -> bytes:
     inside the inner 80% or it loses its corners.
     """
     s = size * SUPERSAMPLE
-    inset = s * safe_zone
+    plate_r = 0.22
 
-    # Plate: the full-bleed background.
-    plate_r = s * 0.22
+    # The artwork is defined in unit space; the safe zone scales it about the
+    # centre, so one geometry definition serves both the full-bleed and the
+    # maskable icon.
+    scale = 1.0 - 2 * safe_zone
 
-    # Frame: the before/after rectangle.
-    fx0 = inset + s * 0.13
-    fx1 = s - inset - s * 0.13
-    fy0 = inset + s * 0.20
-    fy1 = s - inset - s * 0.20
-    frame_r = s * 0.045
-    stroke = max(1.0, s * 0.032)
-    mid = (fx0 + fx1) / 2
+    def to_unit(px: float) -> float:
+        return px / s
 
-    accum = [[(0, 0, 0)] * size for _ in range(size)]
-    counts = SUPERSAMPLE * SUPERSAMPLE
+    def artwork(u: float, v: float) -> tuple[float, float]:
+        return (u - 0.5) / scale + 0.5, (v - 0.5) / scale + 0.5
 
     rows: list[list[tuple[int, int, int]]] = []
     for py in range(s):
         row: list[tuple[int, int, int]] = []
-        y = py + 0.5
+        v = to_unit(py + 0.5)
         for px in range(s):
-            x = px + 0.5
-            colour = (255, 255, 255)
-
-            if not rounded_rect_contains(x, y, 0, 0, s - 1, s - 1, plate_r):
-                # Outside the plate: transparent is not supported by this
-                # encoder's RGB mode, so the corner takes the plate colour's
-                # background. Launchers mask it anyway.
-                colour = SLATE_900
+            u = to_unit(px + 0.5)
+            colour = BRAND
+            if not in_rounded_rect(u, v, 0.0, 0.0, 1.0, 1.0, plate_r):
+                # Outside the plate. This encoder has no alpha channel, so the
+                # corner takes the plate colour; every launcher masks it anyway.
+                colour = BRAND
             else:
-                colour = SLATE_900
-                inside_frame = rounded_rect_contains(x, y, fx0, fy0, fx1, fy1, frame_r)
-                inside_inner = rounded_rect_contains(
-                    x, y, fx0 + stroke, fy0 + stroke, fx1 - stroke, fy1 - stroke, max(0.0, frame_r - stroke)
-                )
-                if inside_frame and not inside_inner:
+                ax, ay = artwork(u, v)
+                sx, sy, sr = SEAL
+                if (ax - sx) ** 2 + (ay - sy) ** 2 <= sr * sr:
+                    colour = ACCENT
+                elif on_frame(ax, ay, FRONT_FRAME, STROKE):
                     colour = WHITE
-                elif inside_inner:
-                    # The divider, and the tinted "after" half beside it.
-                    if abs(x - mid) <= stroke / 2:
-                        colour = WHITE
-                    elif x > mid:
-                        colour = SKY_300
-                    else:
-                        colour = SLATE_900
+                elif on_frame(ax, ay, BACK_FRAME, STROKE):
+                    colour = BRAND_LINE
             row.append(colour)
         rows.append(row)
 
     # Box filter down to the requested size.
+    counts = SUPERSAMPLE * SUPERSAMPLE
+    raw = bytearray()
     for oy in range(size):
+        raw.append(0)  # filter type 0 (None) for this scanline
         for ox in range(size):
             r = g = b = 0
             for dy in range(SUPERSAMPLE):
@@ -123,13 +135,7 @@ def render(size: int, safe_zone: float) -> bytes:
                     r += c[0]
                     g += c[1]
                     b += c[2]
-            accum[oy][ox] = (r // counts, g // counts, b // counts)
-
-    raw = bytearray()
-    for oy in range(size):
-        raw.append(0)  # filter type 0 (None) for this scanline
-        for ox in range(size):
-            raw.extend(accum[oy][ox])
+            raw.extend((r // counts, g // counts, b // counts))
     return bytes(raw)
 
 

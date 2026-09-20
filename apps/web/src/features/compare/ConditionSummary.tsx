@@ -8,6 +8,8 @@ import {
   type RoomDiffView,
   type TenancySummary,
 } from '@handover/shared';
+import { Badge, Banner, Button, DocumentCard, ProgressTrack, Section } from '../../ui/index.js';
+import { RoomCard, type RoomTally } from './RoomCard.js';
 
 /**
  * The review screen: every room, what has been recorded against it, and the
@@ -32,6 +34,13 @@ import {
  * - The claim is **tamper-evidence**, not legal admissibility, and no number
  *   on this screen is computed here: the shortfall and the statutory interest
  *   are the domain's, and the report's contents are the report's.
+ *
+ * ── Layout ──────────────────────────────────────────────────────────────────
+ *
+ * One column on a phone; from `lg`, the rooms take the main column and the
+ * report and its documents move into a sticky rail beside them. The rail is
+ * what makes the screen stop being an endless scroll with the one action that
+ * matters buried at the bottom of it.
  */
 
 export interface ConditionSummaryProps {
@@ -63,6 +72,13 @@ export interface ConditionSummaryProps {
    * progress to draw yet.
    */
   readonly busy?: boolean;
+  /**
+   * The record screen supplies its own masthead — address, deposit, stage and
+   * the journey — so it turns this component's header off rather than saying
+   * all of it twice. On its own (and in tests) the component still introduces
+   * itself.
+   */
+  readonly showHeader?: boolean;
   readonly className?: string;
 }
 
@@ -82,15 +98,6 @@ const REVIEW_REASON_COPY: Record<NonNullable<RoomDiffView['reviewReason']>, stri
   MISSING_PAIR:
     'This room has no matching pair of photographs yet, so there is nothing to compare. Capture the missing phase.',
 };
-
-interface RoomTally {
-  /** Tenant-authored, plus model suggestions the tenant accepted. */
-  readonly recorded: number;
-  /** Model suggestions still awaiting a decision. Never counted as findings. */
-  readonly suggestions: number;
-  readonly rejected: number;
-  readonly pairCount: number;
-}
 
 function tally(room: RoomDiffView): RoomTally {
   let recorded = 0;
@@ -112,6 +119,12 @@ function tally(room: RoomDiffView): RoomTally {
   };
 }
 
+const DOC_TITLE: Record<DocumentRef['docType'], string> = {
+  CONDITION_REPORT: 'Condition Report',
+  EXIT_REPORT: 'Exit Report',
+  DEMAND_LETTER: 'Demand Letter',
+};
+
 export function ConditionSummary({
   tenancy,
   rooms,
@@ -123,12 +136,14 @@ export function ConditionSummary({
   deciding,
   job,
   busy,
+  showHeader = true,
   className,
 }: ConditionSummaryProps) {
   const tallies = useMemo(() => rooms.map((room) => [room, tally(room)] as const), [rooms]);
 
   const totalRecorded = tallies.reduce((sum, [, t]) => sum + t.recorded, 0);
   const totalSuggestions = tallies.reduce((sum, [, t]) => sum + t.suggestions, 0);
+  const totalPairs = tallies.reduce((sum, [, t]) => sum + t.pairCount, 0);
 
   /**
    * Rooms flagged for a reason other than the flag being off. With the flag
@@ -144,346 +159,167 @@ export function ConditionSummary({
   const reportName = phase === 'MOVEIN' ? 'Condition Report' : 'Exit Report';
 
   return (
-    <section className={`space-y-5 ${className || ''}`.trim()} aria-labelledby="condition-summary-heading">
-      <header className="rounded-2xl bg-white p-5 shadow-sm border border-gray-100">
-        <h1 id="condition-summary-heading" className="text-xl font-bold text-[#1a1a1a]">
-          Condition summary
-        </h1>
-        <p className="mt-1.5 text-sm text-gray-500">
-          {tenancy.addressLine}, {tenancy.city}
-        </p>
-        <p className="mt-1 text-sm text-gray-500">
-          Deposit held: {formatRupees(tenancy.depositPaise)}
-        </p>
-
-        <dl className="mt-0 grid grid-cols-3 gap-3 text-center">
-          <div className="rounded-xl bg-[#fafafa] p-4">
-            <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Rooms</dt>
-            <dd className="mt-1 text-2xl font-bold text-[#1a1a1a]" data-testid="total-rooms">
-              {rooms.length}
-            </dd>
-          </div>
-          <div className="rounded-xl bg-[#fafafa] p-4">
-            <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Changes recorded</dt>
-            <dd className="mt-1 text-2xl font-bold text-[#1a1a1a]" data-testid="total-recorded">
-              {totalRecorded}
-            </dd>
-          </div>
-          <div className="rounded-xl bg-[#fafafa] p-4">
-            <dt className="text-xs font-medium text-gray-500 uppercase tracking-wide">Photo pairs</dt>
-            <dd className="mt-1 text-2xl font-bold text-[#1a1a1a]" data-testid="total-pairs">
-              {tallies.reduce((sum, [, t]) => sum + t.pairCount, 0)}
-            </dd>
-          </div>
-        </dl>
-      </header>
-
-      {/*
-        Only raised when a room was flagged for a reason other than the
-        suggestion layer being switched off.
-      */}
-      {needsAttention.length > 0 ? (
-        <p
-          role="status"
-          data-testid="attention-banner"
-          className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
-        >
-          {needsAttention.length === 1
-            ? '1 room needs a closer look.'
-            : `${needsAttention.length} rooms need a closer look.`}
-        </p>
+    <section className={className} aria-labelledby="condition-summary-heading">
+      {showHeader ? (
+        <header className="mb-6">
+          <p className="text-micro font-semibold uppercase text-ink-3">Evidence</p>
+          <h1 id="condition-summary-heading" className="mt-1 font-display text-title text-ink">
+            Condition summary
+          </h1>
+          <p className="mt-1.5 text-sm text-ink-2">
+            {tenancy.addressLine}, {tenancy.city}
+          </p>
+          <p className="tnum mt-0.5 text-sm text-ink-2">
+            Deposit held: {formatRupees(tenancy.depositPaise)}
+          </p>
+        </header>
       ) : null}
 
-      {roomsWithoutPairs.length > 0 ? (
-        <p
-          role="status"
-          data-testid="missing-pairs-banner"
-          className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600"
-        >
-          {roomsWithoutPairs.length === 1
-            ? '1 room has no before-and-after pair yet.'
-            : `${roomsWithoutPairs.length} rooms have no before-and-after pair yet.`}
-        </p>
-      ) : null}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start lg:gap-8">
+        <div className="min-w-0">
+          {/* ── The ledger, in three numbers ──────────────────────────── */}
+          <dl className="grid grid-cols-3 divide-x divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+            <Stat label="Rooms" value={rooms.length} testId="total-rooms" />
+            <Stat label="Changes recorded" value={totalRecorded} testId="total-recorded" />
+            <Stat label="Photo pairs" value={totalPairs} testId="total-pairs" />
+          </dl>
 
-      {totalSuggestions > 0 ? (
-        <p
-          data-testid="suggestions-banner"
-          className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800"
-        >
-          {totalSuggestions === 1
-            ? '1 automatic suggestion is waiting for your decision.'
-            : `${totalSuggestions} automatic suggestions are waiting for your decision.`}{' '}
-          Nothing suggested is included until you accept it.
-        </p>
-      ) : null}
+          <div className="mt-4 space-y-2.5">
+            {/*
+              Only raised when a room was flagged for a reason other than the
+              suggestion layer being switched off.
+            */}
+            {needsAttention.length > 0 ? (
+              <Banner role="status" tone="warn" data-testid="attention-banner">
+                {needsAttention.length === 1
+                  ? '1 room needs a closer look.'
+                  : `${needsAttention.length} rooms need a closer look.`}
+              </Banner>
+            ) : null}
 
-      <ul className="space-y-3" data-testid="room-list">
-        {tallies.map(([room, t]) => (
-          <li
-            key={room.roomId}
-            data-testid={`room-${room.roomId}`}
-            className="rounded-2xl bg-white border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow duration-200"
+            {roomsWithoutPairs.length > 0 ? (
+              <Banner role="status" tone="info" data-testid="missing-pairs-banner">
+                {roomsWithoutPairs.length === 1
+                  ? '1 room has no before-and-after pair yet.'
+                  : `${roomsWithoutPairs.length} rooms have no before-and-after pair yet.`}
+              </Banner>
+            ) : null}
+
+            {totalSuggestions > 0 ? (
+              <Banner role="status" tone="brand" data-testid="suggestions-banner">
+                {totalSuggestions === 1
+                  ? '1 automatic suggestion is waiting for your decision.'
+                  : `${totalSuggestions} automatic suggestions are waiting for your decision.`}{' '}
+                Nothing suggested is included until you accept it.
+              </Banner>
+            ) : null}
+          </div>
+
+          {/*
+            `items-start` rather than stretched rows: a room with three
+            suggestions on it and a room with none differ by 400px, and
+            aligning their action buttons leaves a void the size of a card
+            under the shorter one. Ragged bottoms are the lesser cost.
+          */}
+          <ul
+            className="mt-5 grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
+            data-testid="room-list"
           >
-            <div className="flex items-baseline justify-between gap-2">
-              <h2 className="text-base font-semibold text-[#1a1a1a]">{room.roomLabel}</h2>
-              <span className="text-xs text-gray-400 font-medium">
-                {t.pairCount === 1 ? '1 pair' : `${t.pairCount} pairs`}
-              </span>
-            </div>
-
-            <p className="mt-1.5 text-sm text-gray-600" data-testid={`count-${room.roomId}`}>
-              {t.recorded === 0
-                ? 'No changes recorded'
-                : t.recorded === 1
-                  ? '1 change recorded'
-                  : `${t.recorded} changes recorded`}
-              {t.suggestions > 0
-                ? ` · ${t.suggestions} ${
-                    t.suggestions === 1 ? 'suggestion' : 'suggestions'
-                  } to review`
-                : ''}
-              {t.rejected > 0 ? ` · ${t.rejected} dismissed` : ''}
-            </p>
-
-            {room.reviewReason ? (
-              <p
-                className="mt-1.5 text-xs text-gray-500 italic"
-                data-testid={`reason-${room.roomId}`}
-              >
-                {REVIEW_REASON_COPY[room.reviewReason]}
-              </p>
-            ) : null}
-
-            {room.changes.length > 0 ? (
-              <ul className="mt-2 space-y-2">
-                {room.changes.map((change) => {
-                  const isSuggestion = change.source === 'MODEL';
-                  return (
-                    <li
-                      key={change.id}
-                      data-testid={`change-${change.id}`}
-                      className={`rounded-xl border p-3 text-xs ${
-                        isSuggestion
-                          ? 'border-dashed border-blue-200 bg-blue-50/50'
-                          : 'border-gray-100 bg-white'
-                      }`}
-                    >
-                      <p className="flex flex-wrap items-center gap-1">
-                        {isSuggestion ? (
-                          <span
-                            data-testid={`suggestion-label-${change.id}`}
-                            className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-700"
-                          >
-                            Suggestion
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-600">
-                            You recorded
-                          </span>
-                        )}
-                        {change.tenantAction ? (
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-                              change.tenantAction === 'ACCEPT'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-gray-100 text-gray-500'
-                            }`}
-                          >
-                            {change.tenantAction === 'ACCEPT' ? 'Included' : 'Dismissed'}
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
-                            Not yet decided
-                          </span>
-                        )}
-                        {/*
-                          Model-reported and decorative. Displayed beside a
-                          suggestion, never arithmetic and never a claim the
-                          document makes.
-                        */}
-                        {isSuggestion ? (
-                          <span
-                            className="text-[10px] text-blue-600"
-                            data-testid={`confidence-${change.id}`}
-                          >
-                            model confidence {change.confidence.toFixed(2)}
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="mt-1 text-slate-800">{change.description}</p>
-                      <p className="text-slate-500">{change.location}</p>
-
-                      {/*
-                        Two opposed arguments, or nothing. There is no boolean
-                        here to misread as a verdict.
-                      */}
-                      {change.wearAndTear ? (
-                        <dl
-                          data-testid={`wear-${change.id}`}
-                          className="mt-2 space-y-1 border-l-2 border-gray-200 pl-3 text-[11px] text-gray-500"
-                        >
-                          <div>
-                            <dt className="inline font-medium">A landlord may argue: </dt>
-                            <dd className="inline">{change.wearAndTear.landlordMayArgue}</dd>
-                          </div>
-                          <div>
-                            <dt className="inline font-medium">Tenants typically counter: </dt>
-                            <dd className="inline">
-                              {change.wearAndTear.tenantsTypicallyCounter}
-                            </dd>
-                          </div>
-                        </dl>
-                      ) : null}
-
-                      {/*
-                        §9.7: "the tenant must affirmatively accept each
-                        change." Nothing model-derived reaches a PDF without a
-                        press here, so the control is always offered — including
-                        for a decision already made, because a tenant who
-                        changes their mind must be able to say so.
-
-                        Both buttons stay enabled after a decision so the
-                        current state is shown by `aria-pressed`, not by a
-                        disabled control a screen reader would skip.
-                      */}
-                      {onDecideChange ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            data-testid={`accept-${change.id}`}
-                            aria-pressed={change.tenantAction === 'ACCEPT'}
-                            disabled={deciding}
-                            onClick={() => onDecideChange(room.roomId, change.id, 'ACCEPT')}
-                            className={`min-h-11 flex-1 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 transition-colors ${
-                              change.tenantAction === 'ACCEPT'
-                                ? 'border-emerald-600 bg-emerald-600 text-white'
-                                : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
-                            }`}
-                          >
-                            {change.tenantAction === 'ACCEPT'
-                              ? 'Included in the record'
-                              : 'Include this'}
-                          </button>
-                          <button
-                            type="button"
-                            data-testid={`reject-${change.id}`}
-                            aria-pressed={change.tenantAction === 'REJECT'}
-                            disabled={deciding}
-                            onClick={() => onDecideChange(room.roomId, change.id, 'REJECT')}
-                            className={`min-h-11 flex-1 rounded-xl border px-3 py-2 text-xs font-semibold disabled:opacity-50 transition-colors ${
-                              change.tenantAction === 'REJECT'
-                                ? 'border-gray-700 bg-gray-700 text-white'
-                                : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
-                            }`}
-                          >
-                            {change.tenantAction === 'REJECT' ? 'Left out' : 'Leave this out'}
-                          </button>
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-
-            {onSelectRoom ? (
-              <button
-                type="button"
-                onClick={() => onSelectRoom(room.roomId)}
-                className="mt-3 w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:shadow-sm transition-all"
-              >
-                {t.recorded === 0 && t.suggestions === 0
-                  ? `Add a change in ${room.roomLabel}`
-                  : `Review ${room.roomLabel}`}
-              </button>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-
-      <div className="mt-6 border-t border-gray-100 pt-5">
-        <button
-          type="button"
-          onClick={onGenerateReport}
-          disabled={generating || !onGenerateReport || rooms.length === 0}
-          data-testid="generate-report"
-          className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors disabled:opacity-50"
-        >
-          {generating ? `Generating ${reportName}…` : `Generate ${reportName}`}
-        </button>
-
-        {job ? (
-          <div className="mt-2" data-testid="job-progress">
-            <progress
-              value={job.progressDone}
-              max={Math.max(1, job.progressTotal)}
-              className="h-2 w-full rounded-full appearance-none"
-            />
-            <p className="mt-2 text-xs text-gray-400">
-              {job.status === 'FAILED'
-                ? 'The report could not be generated. Your photographs and their timestamps are unaffected — you can try again.'
-                : `${job.progressDone} of ${job.progressTotal} complete`}
-            </p>
-          </div>
-        ) : null}
-
-        <p className="mt-2 text-xs text-gray-400">
-          The report lists every photograph with the time it was received and its digest, so
-          any later alteration is detectable.
-        </p>
-      </div>
-
-      {documents && documents.length > 0 ? (
-        <div className="mt-4" data-testid="documents">
-          <h2 className="text-base font-semibold text-[#1a1a1a]">Documents</h2>
-          <ul className="mt-2 space-y-2">
-            {documents.map((doc) => (
-              <li
-                key={doc.documentId}
-                data-testid={`document-${doc.documentId}`}
-                className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm text-sm"
-              >
-                <p className="font-semibold text-[#1a1a1a]">
-                  {doc.docType === 'CONDITION_REPORT'
-                    ? 'Condition Report'
-                    : doc.docType === 'EXIT_REPORT'
-                      ? 'Exit Report'
-                      : 'Demand Letter'}
-                </p>
-                <p className="text-xs text-gray-400">Record {doc.recordRef}</p>
-                {doc.url ? (
-                  <>
-                    {/*
-                      `min-h-11` (44px) rather than a bare inline link: an
-                      unstyled anchor here measured 20px tall, under the 24px
-                      WCAG 2.5.8 minimum, on the phone this is actually used on.
-                    */}
-                    <a
-                      href={doc.url}
-                      download
-                      data-testid={`download-${doc.documentId}`}
-                      className="mt-2 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-[#1a1a1a] hover:text-gray-600 transition-colors underline"
-                    >
-                      Download PDF
-                    </a>
-                    {/*
-                      A signed URL is temporary access, not the document. It is
-                      rendered straight from the aggregate and never stored;
-                      reloading is what gets a fresh one.
-                    */}
-                    <span className="block text-xs text-gray-400 mt-1">
-                      This link is temporary — reopen this page to get a fresh one.
-                    </span>
-                  </>
-                ) : (
-                  <p className="mt-1 text-xs text-gray-400">Preparing…</p>
-                )}
-              </li>
+            {tallies.map(([room, t]) => (
+              <RoomCard
+                key={room.roomId}
+                room={room}
+                tally={t}
+                {...(room.reviewReason ? { reason: REVIEW_REASON_COPY[room.reviewReason] } : {})}
+                {...(onSelectRoom ? { onSelectRoom } : {})}
+                {...(onDecideChange ? { onDecideChange } : {})}
+                {...(deciding === undefined ? {} : { deciding })}
+              />
             ))}
           </ul>
         </div>
-      ) : null}
+
+        {/* ── The action, and what it produces ──────────────────────────── */}
+        <aside className="mt-8 lg:sticky lg:top-20 lg:mt-0">
+          <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
+            <h3 className="text-heading font-semibold text-ink">{reportName}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-2">
+              The report lists every photograph with the time it was received and its digest,
+              so any later alteration is detectable.
+            </p>
+
+            <Button
+              block
+              size="lg"
+              className="mt-4"
+              onClick={onGenerateReport}
+              disabled={generating || !onGenerateReport || rooms.length === 0}
+              data-testid="generate-report"
+            >
+              {generating ? `Generating ${reportName}…` : `Generate ${reportName}`}
+            </Button>
+
+            {job ? (
+              <div className="mt-3" data-testid="job-progress">
+                <ProgressTrack
+                  done={job.progressDone}
+                  total={job.progressTotal}
+                  label={`${reportName} progress`}
+                />
+                <p className="tnum mt-1.5 text-xs text-ink-3">
+                  {job.status === 'FAILED'
+                    ? 'The report could not be generated. Your photographs and their timestamps are unaffected — you can try again.'
+                    : `${job.progressDone} of ${job.progressTotal} complete`}
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          {documents && documents.length > 0 ? (
+            <Section
+              headingLevel={3}
+              title="Documents"
+              className="mt-6"
+              aside={<Badge tone="neutral">{documents.length}</Badge>}
+              data-testid="documents"
+            >
+              <ul className="space-y-3">
+                {documents.map((doc) => (
+                  <li key={doc.documentId}>
+                    <DocumentCard
+                      title={DOC_TITLE[doc.docType]}
+                      recordRef={doc.recordRef}
+                      createdAt={doc.createdAt}
+                      {...(doc.url ? { url: doc.url } : {})}
+                      downloadTestId={`download-${doc.documentId}`}
+                      data-testid={`document-${doc.documentId}`}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          ) : null}
+        </aside>
+      </div>
     </section>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  testId,
+}: {
+  readonly label: string;
+  readonly value: number;
+  readonly testId: string;
+}) {
+  return (
+    <div className="px-3 py-4 text-center">
+      <dt className="text-micro font-semibold uppercase text-ink-3">{label}</dt>
+      <dd className="tnum mt-1 text-2xl font-semibold text-ink" data-testid={testId}>
+        {value}
+      </dd>
+    </div>
   );
 }

@@ -263,10 +263,19 @@ describe('CompareSlider — overlay boxes', () => {
     expect(box.style.height).toBe('40%');
   });
 
+  /*
+   * The class names moved with the design system: an active box is drawn in
+   * `accent`, which is the one colour reserved app-wide for an evidence mark,
+   * and a muted one drops to `ink-4`. What is being asserted is unchanged —
+   * the two are drawn differently, and the active one is the marked colour.
+   */
   it('visually distinguishes a muted box from an active one', () => {
     renderSlider({ overlays });
-    expect(screen.getByTestId('overlay-c1').className).toContain('border-amber-400');
-    expect(screen.getByTestId('overlay-c2').className).toContain('border-slate-400/60');
+    const active = screen.getByTestId('overlay-c1').className;
+    const muted = screen.getByTestId('overlay-c2').className;
+    expect(active).toContain('border-accent');
+    expect(muted).toContain('border-ink-4');
+    expect(muted).not.toBe(active);
   });
 });
 

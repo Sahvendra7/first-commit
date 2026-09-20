@@ -3,6 +3,7 @@ import { DEFAULT_ROOM_PRESETS, rupeesToPaise } from '@handover/shared';
 import type { CreateTenancyResponse } from '@handover/shared';
 import type { HandoverApiClient } from '../../lib/api-client.js';
 import { toUserFacingError } from '../../lib/errors.js';
+import { Badge, Banner, Button, Field } from '../../ui/index.js';
 
 /**
  * The smallest real `POST /v1/tenancies`.
@@ -63,111 +64,118 @@ export function CreateTenancy({ api, onCreated }: CreateTenancyProps) {
     }
   }
 
-  const field = 'w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-[#1a1a1a] placeholder:text-gray-400 focus:border-transparent focus:ring-2 focus:ring-[#1a1a1a] outline-none transition-all';
-
   return (
-    <form onSubmit={submit} className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 space-y-4" data-testid="create-tenancy">
-      <h1 className="text-xl font-bold text-[#1a1a1a]">Start a tenancy record</h1>
-      <p className="text-sm text-gray-500">
-        This creates the record your photographs attach to. Karnataka only in this build.
+    <form
+      onSubmit={submit}
+      className="enter mx-auto w-full max-w-measure"
+      data-testid="create-tenancy"
+    >
+      <p className="text-micro font-semibold uppercase text-ink-3">New record</p>
+      <h1 className="mt-1 font-display text-title text-ink">Start a tenancy record</h1>
+      <p className="mt-2 text-sm leading-relaxed text-ink-2">
+        This is the record your photographs attach to. You can start it on the day you get
+        the keys and come back to it at move-out.
       </p>
 
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-        Address
-        <input
+      <div className="mt-6 space-y-5 rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+        <Field
+          id="tenancy-address"
+          label="Address"
           required
           maxLength={240}
           value={addressLine}
           onChange={(e) => setAddressLine(e.target.value)}
-          className={field}
         />
-      </label>
 
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-        City
-        <input
+        <Field
+          id="tenancy-city"
+          label="City"
           required
           maxLength={80}
           value={city}
           onChange={(e) => setCity(e.target.value)}
-          className={field}
         />
-      </label>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-          Monthly rent (₹)
-          <input
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field
+            id="tenancy-rent"
+            label="Monthly rent (₹)"
             required
             inputMode="decimal"
             pattern="\d+(\.\d{1,2})?"
             value={rent}
             onChange={(e) => setRent(e.target.value)}
-            className={field}
           />
-        </label>
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-          Deposit (₹)
-          <input
+          <Field
+            id="tenancy-deposit"
+            label="Deposit (₹)"
+            hint="The amount you want back."
             required
             inputMode="decimal"
             pattern="\d+(\.\d{1,2})?"
             value={deposit}
             onChange={(e) => setDeposit(e.target.value)}
-            className={field}
           />
-        </label>
-      </div>
+        </div>
 
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-        Move-in date
-        <input
+        <Field
+          id="tenancy-move-in"
+          label="Move-in date"
           required
           type="date"
           value={moveInDate}
           onChange={(e) => setMoveInDate(e.target.value)}
-          className={field}
         />
-      </label>
 
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-        Landlord email
-        <input
+        <Field
+          id="tenancy-landlord-email"
+          label="Landlord email"
+          hint="Where the demand letter would be addressed. Nothing is sent from this app."
           required
           type="email"
           maxLength={254}
           value={landlordEmail}
           onChange={(e) => setLandlordEmail(e.target.value)}
-          className={field}
         />
-      </label>
+      </div>
 
-      <div>
-        <p className="text-sm text-gray-500 mb-2">
-          {DEFAULT_ROOM_PRESETS.length} rooms will be created:
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {DEFAULT_ROOM_PRESETS.map((r) => (
-            <span key={r.label} className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700">
-              {r.label}
-            </span>
-          ))}
+      {/*
+        The checklist, shown before it is created rather than discovered after.
+        It comes from `DEFAULT_ROOM_PRESETS` so the capture list and the seed
+        agree by construction.
+      */}
+      <div className="mt-5 rounded-2xl border border-line bg-sunk p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-ink">Rooms to walk</h2>
+          <span className="tnum text-xs text-ink-3">{DEFAULT_ROOM_PRESETS.length}</span>
         </div>
+        <ul className="mt-2.5 flex flex-wrap gap-1.5">
+          {DEFAULT_ROOM_PRESETS.map((preset) => (
+            <li key={preset.label}>
+              <Badge tone="neutral" caps={false}>
+                {preset.label}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+        {/*
+          Karnataka only in this build (CLAUDE.md "Scope"). Said plainly rather
+          than offered as a dropdown of 28 states that would all 422.
+        */}
+        <p className="mt-3 text-xs leading-relaxed text-ink-3">
+          Deposit rules are applied for Karnataka. This build carries that one state.
+        </p>
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
+        <Banner role="alert" tone="danger" className="mt-5">
           {error}
-        </p>
+        </Banner>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-xl bg-[#1a1a1a] px-4 py-3.5 text-sm font-semibold text-white hover:bg-gray-800 transition-colors disabled:opacity-50 min-h-11"
-      >
+      <Button type="submit" size="lg" block className="mt-5" disabled={busy}>
         {busy ? 'Creating…' : 'Create tenancy record'}
-      </button>
+      </Button>
     </form>
   );
 }

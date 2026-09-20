@@ -3,6 +3,7 @@ import type { Phase } from '@handover/shared';
 import type { HandoverApiClient } from '../../lib/api-client.js';
 import { MAX_EDGE_PX } from '../../lib/image-resize.js';
 import { UploadQueue, type QueuedPhoto } from '../../lib/upload-queue.js';
+import { Badge, Button, VerifiedGlyph } from '../../ui/index.js';
 
 /**
  * Capture for one room, one phase (§5.1, web-contract §5).
@@ -24,6 +25,19 @@ import { UploadQueue, type QueuedPhoto } from '../../lib/upload-queue.js';
  *   `photo-ingest` still has to hash it, stamp the server clock and increment
  *   the room counter. `serverPhotoCount` comes from `RoomSummary` and is the
  *   only confirmation shown as confirmation.
+ *
+ * ── The shape of the screen ─────────────────────────────────────────────────
+ *
+ * Room, then what to photograph, then one large control, then what has been
+ * recorded — in that order, because this is the one screen used standing up in
+ * an empty flat with one hand. The capture control is a full-width target with
+ * a camera on it and nothing competing for the same tap, and the phase changes
+ * the instruction above it: at move-out the whole job is *take the same views
+ * again*, which is not obvious unless it is said.
+ *
+ * None of the copy here mentions S3, a presigned POST or a Lambda. The tenant
+ * needs to know their photographs are recorded and what is still in flight;
+ * the transport is the transport's business.
  */
 
 export interface RoomCaptureProps {
@@ -59,12 +73,21 @@ const STATUS_COPY: Record<QueuedPhoto['status'], string> = {
   FAILED: 'Not sent',
 };
 
-const STATUS_CLASS: Record<QueuedPhoto['status'], string> = {
-  QUEUED: 'bg-slate-100 text-slate-600',
-  PREPARING: 'bg-sky-100 text-sky-800',
-  UPLOADING: 'bg-sky-100 text-sky-800',
-  UPLOADED: 'bg-emerald-100 text-emerald-800',
-  FAILED: 'bg-rose-100 text-rose-800',
+/** Tone per state. `UPLOADED` is `ok`, never "recorded" — see the header. */
+const STATUS_TONE: Record<QueuedPhoto['status'], 'neutral' | 'brand' | 'ok' | 'danger'> = {
+  QUEUED: 'neutral',
+  PREPARING: 'brand',
+  UPLOADING: 'brand',
+  UPLOADED: 'ok',
+  FAILED: 'danger',
+};
+
+/** What to point the camera at, which is different in each phase. */
+const GUIDANCE: Record<Phase, string> = {
+  MOVEIN:
+    'Photograph each wall, the floor, and anything already marked or damaged. Stand in the same spot for each view — you will repeat these shots at move-out.',
+  MOVEOUT:
+    'Take the same views again, from the same spots you used at move-in. Like-for-like pairs are what make the comparison mean anything.',
 };
 
 function formatBytes(bytes: number): string {
@@ -141,34 +164,39 @@ export function RoomCapture({
   const sent = photos.filter((p) => p.status === 'UPLOADED').length;
 
   return (
-    <section className={className} aria-labelledby={`${inputId}-heading`}>
-      <header className="flex items-baseline justify-between gap-3">
-        <h2 id={`${inputId}-heading`} className="text-base font-semibold text-slate-900">
-          {roomLabel}
-        </h2>
-        <span className="text-xs text-slate-500">
-          {phase === 'MOVEIN' ? 'Move-in' : 'Move-out'}
-        </span>
+    <section
+      className={[
+        'rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6',
+        className ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      aria-labelledby={`${inputId}-heading`}
+    >
+      <header>
+        <p className="text-micro font-semibold uppercase text-ink-3">Capture</p>
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h2 id={`${inputId}-heading`} className="text-heading font-semibold text-ink">
+            {roomLabel}
+          </h2>
+          <span className="text-sm text-ink-3">
+            {phase === 'MOVEIN' ? 'Move-in' : 'Move-out'}
+          </span>
+        </div>
       </header>
 
-      {/*
-        The server's count, labelled as the server's count. A client-side tally
-        of what it *thinks* it uploaded is exactly the "done" that risk R5 is
-        about.
-      */}
-      <p className="mt-1 text-sm text-slate-600" data-testid="server-count">
-        {serverPhotoCount === undefined
-          ? 'Checking what has been recorded…'
-          : serverPhotoCount === 0
-            ? 'No photographs recorded for this room yet.'
-            : `${serverPhotoCount} ${
-                serverPhotoCount === 1 ? 'photograph' : 'photographs'
-              } recorded for this room.`}
-      </p>
+      <p className="mt-2 text-sm leading-relaxed text-ink-2">{GUIDANCE[phase]}</p>
 
+      {/*
+        The one control on this panel. Full width, 56px tall, and a `<label>`
+        rather than a button because the input underneath is what opens the
+        camera — wrapping it in a button would need JS to forward the click and
+        would lose the native file picker on every browser that does not
+        support `capture`.
+      */}
       <label
         htmlFor={inputId}
-        className="mt-3 flex min-h-[3rem] w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white active:bg-slate-700"
+        className="mt-4 flex min-h-[3.5rem] w-full cursor-pointer items-center justify-center gap-2.5 rounded-xl bg-brand px-4 py-3 text-center text-[0.9375rem] font-semibold text-white shadow-sm transition-colors duration-[var(--dur-1)] hover:bg-brand-hi active:translate-y-px"
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
           <path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 5.5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" />
@@ -187,32 +215,60 @@ export function RoomCapture({
         className="sr-only"
       />
 
-      <p className="mt-2 text-xs text-slate-500">
+      {/*
+        The server's count, labelled as the server's count. A client-side tally
+        of what it *thinks* it uploaded is exactly the "done" that risk R5 is
+        about — so this line, and only this line, gets the verification mark.
+      */}
+      <p
+        className="mt-4 flex items-start gap-2 text-sm font-medium text-ink"
+        data-testid="server-count"
+      >
+        <VerifiedGlyph
+          className={`mt-0.5 h-4 w-4 shrink-0 ${
+            serverPhotoCount ? 'text-ok' : 'text-ink-4'
+          }`}
+        />
+        {serverPhotoCount === undefined
+          ? 'Checking what has been recorded…'
+          : serverPhotoCount === 0
+            ? 'No photographs recorded for this room yet.'
+            : `${serverPhotoCount} ${
+                serverPhotoCount === 1 ? 'photograph' : 'photographs'
+              } recorded for this room.`}
+      </p>
+
+      <p className="mt-2 text-xs leading-relaxed text-ink-3">
         Photographs are resized to {MAX_EDGE_PX}px on this device before they are sent, so
         capture works on a weak connection. The full-size original is not kept.
       </p>
 
       {busy ? (
-        <p role="status" className="mt-2 text-xs text-sky-700" data-testid="busy">
+        <p
+          role="status"
+          className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-brand"
+          data-testid="busy"
+        >
+          <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />
           Sending photographs…
         </p>
       ) : null}
 
       {photos.length > 0 ? (
         <>
-          <div className="mt-4 flex items-baseline justify-between">
-            <h3 className="text-sm font-medium text-slate-700">
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-line pt-4">
+            <h3 className="tnum text-sm font-semibold text-ink">
               This session: {sent} of {photos.length} sent
             </h3>
             {failed.length > 0 ? (
-              <button
-                type="button"
+              <Button
+                tone="danger"
+                size="sm"
                 onClick={() => runBatch(() => queue.retryAll())}
                 disabled={busy}
-                className="rounded border border-rose-300 px-2 py-1 text-xs font-medium text-rose-700 disabled:opacity-50"
               >
                 Retry all {failed.length}
-              </button>
+              </Button>
             ) : null}
           </div>
 
@@ -221,59 +277,61 @@ export function RoomCapture({
             Never a single bar: a tenant needs to know *which* photograph did
             not make it, while they are still standing in the room.
           */}
-          <ul className="mt-2 divide-y divide-slate-200 rounded-lg border border-slate-200">
+          <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
             {photos.map((photo) => (
               <li
                 key={photo.clientRef}
                 data-testid={`photo-${photo.clientRef}`}
-                className="flex items-center gap-3 px-3 py-2"
+                className="flex items-center gap-3 bg-surface px-3 py-2.5"
               >
                 {photo.previewUrl ? (
                   <img
                     src={photo.previewUrl}
                     alt=""
-                    className="h-10 w-10 flex-none rounded object-cover"
+                    className="h-11 w-11 flex-none rounded-lg object-cover ring-1 ring-line"
                   />
                 ) : (
-                  <span className="h-10 w-10 flex-none rounded bg-slate-100" />
+                  <span className="h-11 w-11 flex-none rounded-lg bg-paper-deep" />
                 )}
 
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-slate-800">
+                  <span className="block truncate text-sm font-medium text-ink">
                     {photo.fileName}
                   </span>
-                  <span className="block text-xs text-slate-500">
+                  <span className="tnum block text-xs text-ink-3">
                     {photo.bytes !== undefined ? formatBytes(photo.bytes) : '—'}
                     {photo.width && photo.height ? ` · ${photo.width}×${photo.height}` : ''}
                     {photo.status === 'FAILED' && photo.error ? ` · ${photo.error}` : ''}
                   </span>
                 </span>
 
-                <span
+                <Badge
+                  tone={STATUS_TONE[photo.status]}
+                  dot={photo.status === 'PREPARING' || photo.status === 'UPLOADING'}
+                  caps={false}
+                  className="flex-none"
                   data-testid={`status-${photo.clientRef}`}
-                  className={`flex-none rounded px-2 py-0.5 text-xs font-medium ${
-                    STATUS_CLASS[photo.status]
-                  }`}
                 >
                   {STATUS_COPY[photo.status]}
-                </span>
+                </Badge>
 
                 {photo.status === 'FAILED' ? (
-                  <button
-                    type="button"
+                  <Button
+                    tone="secondary"
+                    size="sm"
+                    className="flex-none"
                     onClick={() => runBatch(() => queue.retry(photo.clientRef))}
                     disabled={busy}
-                    className="flex-none rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 disabled:opacity-50"
                   >
                     Retry
-                  </button>
+                  </Button>
                 ) : null}
               </li>
             ))}
           </ul>
 
           {sent > 0 ? (
-            <p className="mt-2 text-xs text-slate-500" data-testid="ingest-note">
+            <p className="mt-3 text-xs leading-relaxed text-ink-3" data-testid="ingest-note">
               Sent photographs are still being recorded. The count above updates once each
               one has been hashed and timestamped.
             </p>

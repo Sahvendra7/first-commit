@@ -8,6 +8,9 @@ import { ApiError, NetworkError, createApiClient, isDemoMode } from '../api-clie
 import { DemoApiClient } from './client.js';
 import { demoDiff } from './diff.js';
 import { demoStateRules } from './state-rules.js';
+// The authoritative seed the API serves. Imported rather than transcribed, so
+// this test fails if the fixture and the seed ever disagree again.
+import KA_SEED from '../../../../../data/state-rules/KA.json';
 import { DEMO_ROOMS, DEMO_TENANCY_ID, demoTenancy } from './tenancy.js';
 
 describe('demo fixtures conform to the frozen contract', () => {
@@ -257,12 +260,49 @@ describe('DemoApiClient — jobs and errors', () => {
     expect(job.progressTotal).toBe(demoDiff.rooms.length);
   });
 
-  it('serves only Karnataka, with interest in integer basis points', async () => {
+  it('serves only Karnataka', async () => {
     const api = new DemoApiClient();
-    const rules = await api.getStateRules('KA');
-    expect(rules.statutoryInterestBps).toBe(600);
-    expect(Number.isInteger(rules.statutoryInterestBps)).toBe(true);
+    await expect(api.getStateRules('KA')).resolves.toMatchObject({ stateCode: 'KA' });
     await expect(api.getStateRules('TN')).rejects.toMatchObject({ code: 'UNKNOWN_STATE' });
+  });
+
+  /**
+   * The demo must not teach an audience law the seed file does not assert.
+   * `demo-safety`: statutory references, deadlines, authority names and interest
+   * figures come from `data/state-rules/` and from code, never from a model.
+   * This fixture previously carried a 6% rate, a 10-month cap and a different
+   * authority — all invented, none of them in the seed.
+   */
+  it('reports the same statute as the real KA seed, field for field', async () => {
+    const rules = await new DemoApiClient().getStateRules('KA');
+    expect(rules.statutoryInterestBps).toBe(KA_SEED.statutoryInterestBps);
+    expect(rules.depositCapMonths).toBe(KA_SEED.depositCapMonths);
+    expect(rules.refundWindowDays).toBe(KA_SEED.refundWindowDays);
+    expect(rules.authorityName).toBe(KA_SEED.authorityName);
+    expect(rules.mtaAdopted).toBe(KA_SEED.mtaAdopted);
+    expect(rules.escalationSteps).toHaveLength(KA_SEED.escalationSteps.length);
+    expect(rules.statuteRefs.map((r) => r.citation)).toEqual(
+      KA_SEED.statuteRefs.map((r) => r.citation),
+    );
+  });
+
+  it('keeps interest in integer basis points, never a float', async () => {
+    const rules = await new DemoApiClient().getStateRules('KA');
+    expect(Number.isInteger(rules.statutoryInterestBps)).toBe(true);
+  });
+
+  /**
+   * R9. The seed leaves `lastReviewedAt` out on purpose — the file is still
+   * DRAFT_PENDING_LEGAL_REVIEW — and its absence is what stops an unreviewed
+   * table passing as a reviewed one. The UI omits the line; the fixture must
+   * not supply a date the seed does not have.
+   */
+  it('omits lastReviewedAt, because the seed has not been human-reviewed', async () => {
+    const rules = await new DemoApiClient().getStateRules('KA');
+    expect(rules.lastReviewedAt).toBeUndefined();
+    // The seed has no such key at all — TypeScript will not even let it be
+    // read off the imported JSON, which is the point.
+    expect(Object.keys(KA_SEED)).not.toContain('lastReviewedAt');
   });
 
   it('throws ApiError with a stable code for an unknown tenancy', async () => {
