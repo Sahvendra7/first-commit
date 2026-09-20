@@ -29,9 +29,27 @@ import type { MergedChange, MergedRoomDiff } from './merge.js';
 import type { DiffReviewReason } from './persisted.js';
 import type { RoomDiffFailureKind } from './port.js';
 
-/** One pair comparison: a merged change list, or the reason there is none. */
+/**
+ * One pair comparison: a change list, or the reason there is none.
+ *
+ * The success variant carries changes rather than the `MergedRoomDiff` they
+ * came from, because a pair can also be answered from the diff cache (§5.5),
+ * where no merge ran in this invocation. Both routes have to produce the same
+ * shape or the cache would mean something subtly different from a fresh run.
+ *
+ * `inconclusive` is the part that is easy to lose across that boundary: an
+ * empty list because every run agreed the pair is unchanged and an empty list
+ * because nothing survived the agreement bar are different facts (§9.6), and
+ * only the second sends the room to `NEEDS_REVIEW`. `fromMerge` sets it, and
+ * an inconclusive pair is never cached — see `cacheableChanges`.
+ */
 export type PairOutcome =
-  | { readonly ok: true; readonly merged: MergedRoomDiff }
+  | {
+      readonly ok: true;
+      readonly changes: readonly DiffChange[];
+      /** The runs saw something, but nothing met the agreement bar. */
+      readonly inconclusive: boolean;
+    }
   | { readonly ok: false; readonly kind: RoomDiffFailureKind };
 
 export interface RoomDecision {
@@ -76,7 +94,7 @@ export function skippedRoom(reason: DiffReviewReason): RoomDecision {
  * see `MergedChange.representativeConfidence` for why the wire carries a model
  * number rather than the agreement frequency the system actually trusts.
  */
-function toDiffChange(change: MergedChange): DiffChange {
+export function toDiffChange(change: MergedChange): DiffChange {
   return {
     id: change.id,
     type: change.type,
@@ -87,6 +105,38 @@ function toDiffChange(change: MergedChange): DiffChange {
     ...(change.wearAndTear !== undefined ? { wearAndTear: change.wearAndTear } : {}),
     source: 'MODEL',
   };
+}
+
+/**
+ * A completed merge as a pair outcome.
+ *
+ * This is where the §9.6 distinction is captured, once, at the only point
+ * where both halves of it are still visible: `dropped` is the merge's record
+ * of clusters the runs reported but could not agree on, and it does not
+ * survive into the stored change list.
+ */
+export function fromMerge(merged: MergedRoomDiff): PairOutcome {
+  return {
+    ok: true,
+    changes: merged.changes.map(toDiffChange),
+    inconclusive: merged.changes.length === 0 && merged.dropped.length > 0,
+  };
+}
+
+/**
+ * The change list a pair outcome may be written to the diff cache as, or
+ * `undefined` when it must not be cached at all.
+ *
+ * An inconclusive pair is deliberately not cacheable. The cache stores a
+ * change list and nothing else, so caching an inconclusive empty list would
+ * replay on the next run as "every sample agreed this pair is unchanged" —
+ * turning a refusal to make a claim into a claim. A pair the model could not
+ * agree with itself about is re-sampled instead, which costs a model call and
+ * is the correct price for not lying about it.
+ */
+export function cacheableChanges(outcome: PairOutcome): readonly DiffChange[] | undefined {
+  if (!outcome.ok || outcome.inconclusive) return undefined;
+  return outcome.changes;
 }
 
 /**
@@ -104,15 +154,15 @@ export function decideRoom(outcomes: readonly PairOutcome[]): RoomDecision {
 
   const changes: DiffChange[] = [];
   const seen = new Set<string>();
-  let sawDroppedCluster = false;
+  let inconclusive = false;
 
   for (const outcome of outcomes) {
     if (!outcome.ok) continue;
-    if (outcome.merged.dropped.length > 0) sawDroppedCluster = true;
-    for (const change of outcome.merged.changes) {
+    if (outcome.inconclusive) inconclusive = true;
+    for (const change of outcome.changes) {
       if (seen.has(change.id)) continue;
       seen.add(change.id);
-      changes.push(toDiffChange(change));
+      changes.push(change);
     }
   }
 
@@ -127,9 +177,43 @@ export function decideRoom(outcomes: readonly PairOutcome[]): RoomDecision {
   if (changes.length > 0) return { status: 'COMPLETE', changes };
 
   // Nothing survived, but something was seen: the samples disagreed (§9.6).
-  if (sawDroppedCluster) return skippedRoom('LOW_CONFIDENCE');
+  if (inconclusive) return skippedRoom('LOW_CONFIDENCE');
 
   // Every run of every pair agreed: the room is unchanged. The one case in
   // which an empty list is an answer rather than an absence.
   return { status: 'COMPLETE', changes: [] };
+}
+
+/**
+ * Fold a worker's fresh suggestions into what the room already holds.
+ *
+ * With the suggestion layer off, the review screen is the *primary* way a
+ * change list comes to exist (`docs/web-contract.md` §0.2), so a tenant may be
+ * annotating a room while the diff job for that tenancy is still running. The
+ * worker writing its own list over the top would silently delete their
+ * evidence, which is the one thing this system exists not to do.
+ *
+ * So a change survives the write when a human owns it — they wrote it
+ * (`source: 'TENANT'`) or they ruled on it (`tenantAction` set). Rule 1 of
+ * `human-edits.ts` restated at the storage boundary: a model re-run is new
+ * evidence about the photographs, never new evidence about what the tenant
+ * decided. A rejection in particular is kept rather than dropped, so the
+ * change cannot be resurrected as unreviewed by the next run.
+ *
+ * An unreviewed `MODEL` suggestion from an earlier run is not human-owned and
+ * is replaced: it is this run's opinion that is current.
+ *
+ * Ids are content-derived (`merge.ts`), so a change the tenant already ruled
+ * on keeps its decision across re-runs instead of reappearing as a duplicate.
+ */
+export function reconcileWorkerChanges(
+  existing: readonly DiffChange[],
+  produced: readonly DiffChange[],
+): DiffChange[] {
+  const humanOwned = existing.filter(
+    (change) => change.source === 'TENANT' || change.tenantAction !== undefined,
+  );
+  const kept = new Set(humanOwned.map((change) => change.id));
+
+  return [...humanOwned, ...produced.filter((change) => !kept.has(change.id))];
 }

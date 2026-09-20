@@ -10,7 +10,9 @@
 import { describe, expect, it } from 'vitest';
 import type { MergedRoomDiff } from '../../../src/domain/diff/merge.js';
 import {
+  cacheableChanges,
   decideRoom,
+  fromMerge,
   reviewReasonFor,
   skippedRoom,
   type PairOutcome,
@@ -89,7 +91,7 @@ describe('skippedRoom — a room no model looked at', () => {
 
 describe('decideRoom — all pairs succeeded', () => {
   it('is COMPLETE when the merge produced surviving changes', () => {
-    const decision = decideRoom([{ ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) }]);
+    const decision = decideRoom([fromMerge(merged([change('c1', 'dark stain', 0.7)]))]);
 
     expect(decision.status).toBe('COMPLETE');
     expect(decision.reviewReason).toBeUndefined();
@@ -97,7 +99,7 @@ describe('decideRoom — all pairs succeeded', () => {
   });
 
   it('is COMPLETE with an empty list when every run agreed the room is unchanged', () => {
-    const decision = decideRoom([{ ok: true, merged: merged([]) }]);
+    const decision = decideRoom([fromMerge(merged([]))]);
 
     expect(decision.status).toBe('COMPLETE');
     expect(decision.reviewReason).toBeUndefined();
@@ -108,7 +110,7 @@ describe('decideRoom — all pairs succeeded', () => {
     // §9.6: "A room whose samples do not agree ... becomes NEEDS_REVIEW."
     // Reporting COMPLETE here would say "no changes" when the truth is
     // "the model could not agree with itself".
-    const decision = decideRoom([{ ok: true, merged: merged([], [droppedCluster()]) }]);
+    const decision = decideRoom([fromMerge(merged([], [droppedCluster()]))]);
 
     expect(decision.status).toBe('NEEDS_REVIEW');
     expect(decision.reviewReason).toBe('LOW_CONFIDENCE');
@@ -118,7 +120,7 @@ describe('decideRoom — all pairs succeeded', () => {
 
 describe('decideRoom — the wire shape of a model change', () => {
   it('marks every model change as source MODEL and leaves tenantAction unset', () => {
-    const decision = decideRoom([{ ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) }]);
+    const decision = decideRoom([fromMerge(merged([change('c1', 'dark stain', 0.7)]))]);
     const [only] = decision.changes;
 
     expect(only?.source).toBe('MODEL');
@@ -128,13 +130,13 @@ describe('decideRoom — the wire shape of a model change', () => {
   it('carries the representative run\'s own confidence, unaveraged', () => {
     // §9.2: the model number is decoration, carried for display. It is one
     // run's self-assessment — never a mean, a max or a score across runs.
-    const decision = decideRoom([{ ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) }]);
+    const decision = decideRoom([fromMerge(merged([change('c1', 'dark stain', 0.7)]))]);
 
     expect(decision.changes[0]?.confidence).toBe(0.7);
   });
 
   it('does not put agreementFrequency on the wire', () => {
-    const decision = decideRoom([{ ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) }]);
+    const decision = decideRoom([fromMerge(merged([change('c1', 'dark stain', 0.7)]))]);
 
     expect(decision.changes[0]).not.toHaveProperty('agreementFrequency');
     expect(decision.changes[0]).not.toHaveProperty('runCount');
@@ -142,7 +144,7 @@ describe('decideRoom — the wire shape of a model change', () => {
   });
 
   it('preserves the merge\'s stable id so a tenant decision survives a re-run', () => {
-    const decision = decideRoom([{ ok: true, merged: merged([change('chg_abc', 'dark stain', 0.7)]) }]);
+    const decision = decideRoom([fromMerge(merged([change('chg_abc', 'dark stain', 0.7)]))]);
     expect(decision.changes[0]?.id).toBe('chg_abc');
   });
 });
@@ -150,8 +152,8 @@ describe('decideRoom — the wire shape of a model change', () => {
 describe('decideRoom — pair isolation within one room', () => {
   it('unions the changes of several successful pairs', () => {
     const decision = decideRoom([
-      { ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) },
-      { ok: true, merged: merged([change('c2', 'deep scratch', 0.6)]) },
+      fromMerge(merged([change('c1', 'dark stain', 0.7)])),
+      fromMerge(merged([change('c2', 'deep scratch', 0.6)])),
     ]);
 
     expect(decision.status).toBe('COMPLETE');
@@ -160,8 +162,8 @@ describe('decideRoom — pair isolation within one room', () => {
 
   it('deduplicates a feature two pairs both reported', () => {
     const decision = decideRoom([
-      { ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) },
-      { ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) },
+      fromMerge(merged([change('c1', 'dark stain', 0.7)])),
+      fromMerge(merged([change('c1', 'dark stain', 0.7)])),
     ]);
 
     expect(decision.changes).toHaveLength(1);
@@ -169,7 +171,7 @@ describe('decideRoom — pair isolation within one room', () => {
 
   it('keeps what succeeded but still flags the room when one pair failed', () => {
     const decision = decideRoom([
-      { ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) },
+      fromMerge(merged([change('c1', 'dark stain', 0.7)])),
       { ok: false, kind: 'MODEL_ERROR' },
     ]);
 
@@ -214,9 +216,56 @@ describe('decideRoom — degenerate input', () => {
 
   it('is deterministic', () => {
     const outcomes: PairOutcome[] = [
-      { ok: true, merged: merged([change('c1', 'dark stain', 0.7)]) },
+      fromMerge(merged([change('c1', 'dark stain', 0.7)])),
       { ok: false, kind: 'MODEL_ERROR' },
     ];
     expect(decideRoom(outcomes)).toEqual(decideRoom(outcomes));
+  });
+});
+
+describe('fromMerge / cacheableChanges — what the diff cache may hold', () => {
+  it('marks a merge that produced changes as conclusive', () => {
+    const outcome = fromMerge(merged([change('c1', 'dark stain', 0.7)]));
+    expect(outcome).toMatchObject({ ok: true, inconclusive: false });
+  });
+
+  it('marks an all-agreed-unchanged merge as conclusive', () => {
+    expect(fromMerge(merged([]))).toMatchObject({ ok: true, inconclusive: false });
+  });
+
+  it('marks a merge whose clusters all fell below k as inconclusive', () => {
+    expect(fromMerge(merged([], [droppedCluster()]))).toMatchObject({
+      ok: true,
+      inconclusive: true,
+    });
+  });
+
+  it('refuses to cache an inconclusive pair', () => {
+    // Caching an inconclusive empty list would replay next run as "every
+    // sample agreed this pair is unchanged" — a refusal to claim, turned
+    // into a claim.
+    expect(cacheableChanges(fromMerge(merged([], [droppedCluster()])))).toBeUndefined();
+  });
+
+  it('refuses to cache a failed pair', () => {
+    expect(cacheableChanges({ ok: false, kind: 'MODEL_ERROR' })).toBeUndefined();
+  });
+
+  it('caches a conclusive empty result, so an unchanged room is free to re-run', () => {
+    expect(cacheableChanges(fromMerge(merged([])))).toEqual([]);
+  });
+
+  it('caches the converted wire changes, not the merge internals', () => {
+    const cached = cacheableChanges(fromMerge(merged([change('c1', 'dark stain', 0.7)])));
+    expect(cached?.[0]).toMatchObject({ id: 'c1', source: 'MODEL', confidence: 0.7 });
+    expect(cached?.[0]).not.toHaveProperty('agreementFrequency');
+  });
+
+  it('round-trips a cached list through decideRoom as COMPLETE', () => {
+    const cached = cacheableChanges(fromMerge(merged([change('c1', 'dark stain', 0.7)])))!;
+    const decision = decideRoom([{ ok: true, changes: cached, inconclusive: false }]);
+
+    expect(decision.status).toBe('COMPLETE');
+    expect(decision.changes.map((c) => c.id)).toEqual(['c1']);
   });
 });

@@ -14,7 +14,11 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import {
   GSI1_NAME,
+  diffCachePk,
+  diffCacheSk,
   diffSkPrefix,
+  jobPk,
+  jobSk,
   key,
   photoSk,
   photoSkPhasePrefix,
@@ -22,8 +26,10 @@ import {
   tenancyPk,
 } from '@handover/shared';
 import type {
+  DiffCacheItem,
   HandoverItem,
   JobItem,
+  JobStatus,
   Phase,
   PhotoItem,
   RoomItem,
@@ -432,5 +438,240 @@ export async function patchRoomDiff(
 
   throw new WriteContentionError(
     `Could not update diff for ${tenancyId}/${roomId} after ${attempts} attempts`,
+  );
+}
+
+/* ── Diff cache (AP-8) ─────────────────────────────────────────────────────── */
+
+/**
+ * A previously computed change list for a `(before, after, promptVersion)`
+ * triple, or `undefined` on a miss.
+ *
+ * Eventually consistent deliberately. A cache miss on a freshly written entry
+ * costs one model call; a strongly consistent read costs double on every
+ * lookup for a correctness property the cache does not need.
+ */
+export async function getDiffCache(cacheKey: string): Promise<DiffCacheItem | undefined> {
+  const out = await documentClient().send(
+    new GetCommand({ TableName: config.tableName(), Key: key.diffCache(cacheKey) }),
+  );
+  return out.Item as DiffCacheItem | undefined;
+}
+
+/** §6.4: diff-cache entries live 90 days. */
+export const DIFF_CACHE_TTL_SECONDS = 90 * 24 * 60 * 60;
+
+/**
+ * Store a computed change list against its content key.
+ *
+ * Unconditional: two workers that computed the same pair under the same prompt
+ * wrote the same question's answer, and neither is more right than the other.
+ * A conditional put here would buy nothing and add a failure path.
+ */
+export async function putDiffCache(item: DiffCacheItem): Promise<void> {
+  await documentClient().send(
+    new PutCommand({
+      TableName: config.tableName(),
+      Item: { ...item, PK: diffCachePk(item.cacheKey), SK: diffCacheSk() },
+    }),
+  );
+}
+
+/* ── Job lifecycle (AP-6) ──────────────────────────────────────────────────── */
+
+/**
+ * Take ownership of a job for this invocation.
+ *
+ * Async Lambda invocation is at-least-once (§11.3), so a worker must assume it
+ * may be the second delivery of the same job. The conditional move to
+ * `RUNNING` is what makes that safe: it succeeds from `QUEUED` (the first
+ * delivery) and from `RUNNING` (a redelivery after a crash mid-run, which must
+ * be allowed to finish the remaining rooms), and fails from `DONE` or `FAILED`.
+ *
+ * `false` therefore means "this job is over" — not an error, and not a reason
+ * to throw. The caller returns without doing work, which is exactly what a
+ * duplicate delivery should do.
+ */
+export async function claimJob(jobId: string, now: string): Promise<JobItem | undefined> {
+  try {
+    const out = await documentClient().send(
+      new UpdateCommand({
+        TableName: config.tableName(),
+        Key: key.job(jobId),
+        UpdateExpression: 'SET #status = :running, #updatedAt = :now',
+        ConditionExpression:
+          'attribute_exists(PK) AND (#status = :queued OR #status = :running)',
+        ExpressionAttributeNames: { '#status': 'status', '#updatedAt': 'updatedAt' },
+        ExpressionAttributeValues: {
+          ':running': 'RUNNING' satisfies JobStatus,
+          ':queued': 'QUEUED' satisfies JobStatus,
+          ':now': now,
+        },
+        ReturnValues: 'ALL_NEW',
+      }),
+    );
+    return out.Attributes as JobItem | undefined;
+  } catch (err) {
+    if (isConditionalFailure(err)) return undefined;
+    throw err;
+  }
+}
+
+/**
+ * Move a job to a terminal state.
+ *
+ * Conditional on the job not already being terminal, so a redelivery that
+ * raced to the end cannot rewrite a `DONE` job's `resultRef` or downgrade it
+ * to `FAILED`. A lost race is a no-op rather than a throw: the winner recorded
+ * the same outcome.
+ */
+export async function finishJob(
+  jobId: string,
+  status: Extract<JobStatus, 'DONE' | 'FAILED'>,
+  now: string,
+  extra: { readonly resultRef?: string; readonly errorCode?: string } = {},
+): Promise<void> {
+  const sets = ['#status = :status', '#updatedAt = :now'];
+  const names: Record<string, string> = { '#status': 'status', '#updatedAt': 'updatedAt' };
+  const values: Record<string, unknown> = {
+    ':status': status,
+    ':now': now,
+    ':done': 'DONE' satisfies JobStatus,
+    ':failed': 'FAILED' satisfies JobStatus,
+  };
+
+  if (extra.resultRef !== undefined) {
+    sets.push('#resultRef = :resultRef');
+    names['#resultRef'] = 'resultRef';
+    values[':resultRef'] = extra.resultRef;
+  }
+  if (extra.errorCode !== undefined) {
+    sets.push('#errorCode = :errorCode');
+    names['#errorCode'] = 'errorCode';
+    values[':errorCode'] = extra.errorCode;
+  }
+
+  try {
+    await documentClient().send(
+      new UpdateCommand({
+        TableName: config.tableName(),
+        Key: key.job(jobId),
+        UpdateExpression: `SET ${sets.join(', ')}`,
+        ConditionExpression:
+          'attribute_exists(PK) AND #status <> :done AND #status <> :failed',
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      }),
+    );
+  } catch (err) {
+    if (isConditionalFailure(err)) return;
+    throw err;
+  }
+}
+
+/**
+ * Write one room's diff and advance the job's progress counter — atomically.
+ *
+ * This is the heart of the worker's idempotency, and the two halves have to be
+ * one operation. `progressDone` is what the client's progress bar reads (§7:
+ * "a real progress bar, not a fake one"), so it must count rooms that actually
+ * have a DIFF item. A separate `ADD` after a successful put would drift on
+ * every partial failure and double-count on every redelivery.
+ *
+ * `computedForJobId` on the DIFF item is the idempotency token. A room already
+ * carrying this job's id is skipped before the transaction is even built — no
+ * model call, no second increment — and the guard is re-asserted inside the
+ * condition so a concurrent invocation that got there first loses cleanly.
+ *
+ * The `version` guard is the same optimistic-concurrency scheme `patchRoomDiff`
+ * uses, and for the same reason: a tenant may be annotating this very room
+ * from the review screen while the job runs. Losing that race re-reads and
+ * replays `build` over the winner's item rather than overwriting it.
+ */
+export async function recordRoomDiffForJob(args: {
+  readonly tenancyId: string;
+  readonly roomId: string;
+  readonly jobId: string;
+  /** Pure: current item (or `undefined`) in, next item out. */
+  readonly build: (current: PersistedDiffItem | undefined) => PersistedDiffItem;
+  readonly attempts?: number;
+}): Promise<{ readonly written: boolean; readonly item: PersistedDiffItem | undefined }> {
+  const { tenancyId, roomId, jobId, build, attempts = 5 } = args;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const current = await getRoomDiff(tenancyId, roomId);
+
+    // Already processed by this job. A redelivery must not compare the room
+    // again, and must not move the progress bar a second time.
+    if (current?.computedForJobId === jobId) return { written: false, item: current };
+
+    const next: PersistedDiffItem = {
+      ...build(current),
+      ...key.diff(tenancyId, roomId),
+      entityType: 'DIFF',
+      computedForJobId: jobId,
+      version: (current?.version ?? 0) + 1,
+    };
+
+    // Mirrors `patchRoomDiff`: an item written before the version counter
+    // existed is guarded on the attribute's absence rather than on a value.
+    const names: Record<string, string> = { '#cfj': 'computedForJobId' };
+    const values: Record<string, unknown> = { ':jobId': jobId };
+    let condition: string;
+
+    if (!current) {
+      condition = 'attribute_not_exists(PK)';
+    } else if (current.version === undefined) {
+      names['#v'] = 'version';
+      condition = 'attribute_not_exists(#v) AND (attribute_not_exists(#cfj) OR #cfj <> :jobId)';
+    } else {
+      names['#v'] = 'version';
+      values[':expected'] = current.version;
+      condition = '#v = :expected AND (attribute_not_exists(#cfj) OR #cfj <> :jobId)';
+    }
+
+    try {
+      await documentClient().send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Put: {
+                TableName: config.tableName(),
+                Item: next,
+                ConditionExpression: condition,
+                ExpressionAttributeNames: names,
+                ...(Object.keys(values).length > 0
+                  ? { ExpressionAttributeValues: values }
+                  : {}),
+              },
+            },
+            {
+              Update: {
+                TableName: config.tableName(),
+                Key: { PK: jobPk(jobId), SK: jobSk() },
+                UpdateExpression: 'ADD #progressDone :one SET #updatedAt = :now',
+                // A job that has gone away mid-run must fail loudly rather
+                // than have this `ADD` conjure a counter onto a fresh item.
+                ConditionExpression: 'attribute_exists(PK)',
+                ExpressionAttributeNames: {
+                  '#progressDone': 'progressDone',
+                  '#updatedAt': 'updatedAt',
+                },
+                ExpressionAttributeValues: { ':one': 1, ':now': new Date().toISOString() },
+              },
+            },
+          ],
+        }),
+      );
+      return { written: true, item: next };
+    } catch (err) {
+      if (!isConditionalFailure(err)) throw err;
+      // Someone wrote this room between our read and our write — a tenant
+      // PATCH, or a concurrent delivery of this job. Re-read and replay.
+    }
+  }
+
+  throw new WriteContentionError(
+    `Could not record diff for ${tenancyId}/${roomId} after ${attempts} attempts`,
   );
 }

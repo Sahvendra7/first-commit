@@ -25,6 +25,7 @@ import {
   updateTenancyStatus,
 } from '../../adapters/dynamo/evidence-store.js';
 import { phaseJobId } from '../../adapters/job-id.js';
+import { invokeWorker } from '../../adapters/lambda/dispatch.js';
 import { awaitIngestReconciled, phaseAlreadyComplete } from '../../domain/evidence/reconcile.js';
 import { InvalidTransitionError, clockKeysFor, nextStatusOnPhaseComplete } from '../../domain/tenancy/state-machine.js';
 import { NotOwnerError, assertOwnership } from '../../domain/tenancy/ownership.js';
@@ -41,6 +42,42 @@ const JOB_FOR_PHASE: Readonly<Record<Phase, JobType>> = {
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Which deployed function runs which job type. The names come from the
+ * environment CDK populates, read per request rather than at module load so a
+ * unit test can set them after import.
+ *
+ * An absent name is `undefined` rather than a throw: a worker that is not
+ * deployed yet must not turn a successfully closed phase into a 500. The job
+ * record stands either way, and the evidence is already recorded.
+ */
+const WORKER_ENV: Readonly<Record<JobType, string>> = {
+  DIFF: 'DIFF_WORKER_FUNCTION_NAME',
+  CONDITION_REPORT: 'DOC_WORKER_FUNCTION_NAME',
+  EXIT_REPORT: 'DOC_WORKER_FUNCTION_NAME',
+  LETTER: 'DOC_WORKER_FUNCTION_NAME',
+};
+
+function workerFunctionName(jobType: JobType): string | undefined {
+  const name = process.env[WORKER_ENV[jobType]]?.trim();
+  return name && name.length > 0 ? name : undefined;
+}
+
+/**
+ * Hand the job to its worker. Never throws — see the call sites for why the
+ * dispatch is deliberately not allowed to fail the request.
+ */
+async function dispatch(jobType: JobType, tenancyId: string, jobId: string): Promise<void> {
+  const worker = workerFunctionName(jobType);
+  if (!worker) {
+    console.warn('worker_not_configured', { jobId, jobType });
+    return;
+  }
+  if (!(await invokeWorker(worker, { tenancyId, jobId }))) {
+    console.warn('worker_dispatch_not_accepted', { jobId, jobType });
+  }
+}
 
 export const handler = withErrors(async (event: ApiEvent): Promise<ApiResult> => {
   const sub = callerSub(event);
@@ -61,6 +98,19 @@ export const handler = withErrors(async (event: ApiEvent): Promise<ApiResult> =>
   if (phaseAlreadyComplete(tenancy.status, phase)) {
     const existing = await getJob(phaseJobId(id, JOB_FOR_PHASE[phase]));
     if (existing) {
+      // A job still `QUEUED` is one whose dispatch never landed: the worker
+      // moves it to `RUNNING` as its first act. Re-completing is the §7
+      // idempotency path, and re-dispatching here is what makes it double as
+      // the recovery path for a lost invocation — without it, a dropped
+      // dispatch leaves a progress bar that never moves and no way back.
+      //
+      // Deliberately not re-dispatched from `RUNNING`: that job is underway,
+      // and a second invocation would be redundant rather than corrective.
+      // It would still be *safe* — `claimJob` admits a redelivery and every
+      // room already recorded is skipped — but safe is not a reason to do it.
+      if (existing.status === 'QUEUED') {
+        await dispatch(JOB_FOR_PHASE[phase], id, existing.jobId);
+      }
       return ok(
         completePhaseResponseSchema.parse({ jobId: existing.jobId, status: existing.status }),
         200,
@@ -159,6 +209,18 @@ export const handler = withErrors(async (event: ApiEvent): Promise<ApiResult> =>
     clockKeysFor(nextStatus, tenancy.refundDueDate),
     tenancy.status,
   );
+
+  // §8.2: `A-)F: async invoke`. Dispatched **after** both writes have
+  // committed, and deliberately not allowed to fail the request.
+  //
+  // The ordering is the recovery story. The job record and the closed phase
+  // are the durable facts; the invocation is a nudge. If the nudge is lost the
+  // client sees a real `QUEUED` job that never advances, and re-completing the
+  // phase re-dispatches the same derived `jobId` — the §7 idempotency path,
+  // reused as the retry path. Dispatching *first* would risk a worker reading
+  // a job that is not there yet, and throwing on a failed dispatch would
+  // return 500 for a phase that is already closed, which no retry can undo.
+  await dispatch(JOB_FOR_PHASE[phase], id, jobId);
 
   return ok(completePhaseResponseSchema.parse({ jobId, status: 'QUEUED' }), 202);
 });

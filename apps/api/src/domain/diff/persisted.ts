@@ -47,4 +47,17 @@ export interface PersistedDiffItem extends DiffItem {
   reviewReason?: DiffReviewReason;
   /** Whether the change list came from the diff cache rather than a fresh run. */
   cacheHit?: boolean;
+  /**
+   * The job that last reached an opinion about this room.
+   *
+   * Purely an idempotency marker, and never on the wire. S3 events and async
+   * Lambda invocations are both at-least-once (§11.3), so a diff job can be
+   * delivered twice; a room already carrying the running job's id has been
+   * processed and is skipped — no second model call, and no second increment
+   * of `progressDone`. It is written in the same transaction as the progress
+   * counter, so the two cannot disagree.
+   *
+   * Absent on a room written by a tenant PATCH before any worker ran.
+   */
+  computedForJobId?: string;
 }
