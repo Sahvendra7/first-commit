@@ -5,6 +5,7 @@ import {
   GET_URL_TTL_SECONDS,
   buildDiffView,
   buildTenancyAggregate,
+  UnsignedEvidenceError,
   evidenceKeysFor,
   pairPhotosByRoom,
 } from '../../../src/domain/evidence/aggregate.js';
@@ -155,17 +156,50 @@ describe('buildTenancyAggregate', () => {
   });
 
   /**
-   * A photo whose object could not be signed is dropped from the payload
-   * rather than emitted with an empty URL: `photoRefSchema` requires a real
-   * URL, and a half-built aggregate would fail validation at the edge and turn
-   * one unreadable object into a 500 for the whole tenancy.
+   * ── A reversal, deliberately ─────────────────────────────────────────────
+   * This module previously *dropped* a photo whose object could not be
+   * signed, on the reasoning that `photoRefSchema` requires a real URL and a
+   * half-built aggregate would turn one unreadable object into a 500 for the
+   * whole tenancy.
+   *
+   * That reasoning is wrong for this product, and the direction of the error
+   * is why. A 500 is loud, and a tenant who reloads gets their evidence. A
+   * short list is silent: a room that holds four photographs renders three,
+   * the count on the screen is simply lower than what was recorded, and
+   * nothing anywhere says a photograph was omitted. On a screen whose entire
+   * job is to show the tenant what evidence exists, under-reporting is the
+   * worse failure — and it is the one nobody can detect.
+   *
+   * So a photo that cannot be represented is now an error carrying the ids,
+   * and the handler turns it into a 503 the client can retry.
    */
-  it('omits a photo whose URL could not be resolved', () => {
+  it('refuses to build an aggregate that would omit a photo', () => {
     const items = fullSet();
     const partial = urlMap(items);
     partial.delete('tenancies/t1/MOVEIN/r_bath/p3.jpg');
-    const out = buildTenancyAggregate(items, partial);
-    expect(out.photos).toHaveLength(2);
+
+    expect(() => buildTenancyAggregate(items, partial)).toThrow(UnsignedEvidenceError);
+  });
+
+  it('names the photo and the key it could not sign', () => {
+    const items = fullSet();
+    const partial = urlMap(items);
+    partial.delete('tenancies/t1/MOVEIN/r_bath/p3.jpg');
+
+    try {
+      buildTenancyAggregate(items, partial);
+      throw new Error('expected UnsignedEvidenceError');
+    } catch (err) {
+      expect(err).toBeInstanceOf(UnsignedEvidenceError);
+      expect((err as UnsignedEvidenceError).s3Keys).toEqual(['tenancies/t1/MOVEIN/r_bath/p3.jpg']);
+      expect((err as UnsignedEvidenceError).photoIds).toEqual(['p3']);
+    }
+  });
+
+  it('builds normally when every photo signed', () => {
+    const items = fullSet();
+    const out = buildTenancyAggregate(items, urlMap(items));
+    expect(out.photos).toHaveLength(3);
     expect(() => getTenancyResponseSchema.parse(out)).not.toThrow();
   });
 
@@ -245,5 +279,40 @@ describe('buildDiffView', () => {
     const out = buildDiffView('t1', items, urlMap(items));
     expect(out.rooms).toEqual([]);
     expect(out.needsReviewCount).toBe(0);
+  });
+});
+
+describe('buildDiffView — evidence is never silently short', () => {
+  it('refuses to build a view that would omit a before-photo', () => {
+    const items = fullSet();
+    const partial = urlMap(items);
+    partial.delete('tenancies/t1/MOVEIN/r_kitchen/p1.jpg');
+
+    expect(() => buildDiffView('t1', items, partial)).toThrow(UnsignedEvidenceError);
+  });
+
+  it('refuses to build a view that would omit an after-photo', () => {
+    const items = fullSet();
+    const partial = urlMap(items);
+    partial.delete('tenancies/t1/MOVEOUT/r_kitchen/p2.jpg');
+
+    expect(() => buildDiffView('t1', items, partial)).toThrow(UnsignedEvidenceError);
+  });
+
+  it('reports every unsigned key at once rather than the first', () => {
+    const items = fullSet();
+    const partial = new Map<string, ResolvedUrl>();
+
+    try {
+      buildDiffView('t1', items, partial);
+      throw new Error('expected UnsignedEvidenceError');
+    } catch (err) {
+      expect((err as UnsignedEvidenceError).s3Keys).toHaveLength(3);
+    }
+  });
+
+  it('builds normally when every photo signed', () => {
+    const items = fullSet();
+    expect(() => buildDiffView('t1', items, urlMap(items))).not.toThrow();
   });
 });

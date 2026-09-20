@@ -99,8 +99,18 @@ export async function signEvidenceGet(s3Key: string, now: Date): Promise<Resolve
 
 /**
  * Sign every key an aggregate needs, returning the map the domain assembler
- * expects. A key that fails to sign is simply absent from the map — the
- * assembler drops that photo rather than failing the whole read.
+ * expects.
+ *
+ * A key that fails both attempts is absent from the map, and the assembler
+ * treats that as `UnsignedEvidenceError` rather than a shorter list — a read
+ * path that under-reports evidence is the one failure nobody can detect.
+ *
+ * Hence the retry. Signing is a **local** computation — an HMAC over a
+ * canonical request, no network call to S3 — so the only realistic failure is
+ * resolving credentials, which is exactly the kind of thing that succeeds on
+ * a second try. One retry costs microseconds and turns most would-be 503s
+ * into a normal response. A second failure is a real condition and is allowed
+ * to surface.
  */
 export async function signEvidenceGets(
   s3Keys: readonly string[],
@@ -108,11 +118,14 @@ export async function signEvidenceGets(
 ): Promise<Map<string, ResolvedUrl>> {
   const entries = await Promise.all(
     s3Keys.map(async (s3Key) => {
-      try {
-        return [s3Key, await signEvidenceGet(s3Key, now)] as const;
-      } catch {
-        return undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          return [s3Key, await signEvidenceGet(s3Key, now)] as const;
+        } catch {
+          // Fall through to the retry, then give up.
+        }
       }
+      return undefined;
     }),
   );
   return new Map(entries.filter((e): e is readonly [string, ResolvedUrl] => e !== undefined));

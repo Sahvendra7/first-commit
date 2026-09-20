@@ -43,6 +43,56 @@ export class MissingTenancyItemError extends Error {
   }
 }
 
+/**
+ * Raised when a payload cannot represent every photograph the ledger holds.
+ *
+ * ── Why this is an error rather than a shorter list ─────────────────────────
+ * This module used to drop an unsignable photo and carry on, because
+ * `photoRefSchema` requires a real URL and a half-built aggregate would fail
+ * validation at the edge — turning one unreadable object into a 500 for the
+ * whole tenancy. That trade is the wrong way round for an evidence ledger,
+ * and the direction of each failure is why.
+ *
+ * A 500 is loud and recoverable: the tenant reloads and sees their evidence.
+ * A short list is neither. A room that holds four photographs renders three,
+ * the screen's count is simply lower than what was recorded, and nothing says
+ * a photograph was omitted — so nobody knows to reload, and the one screen
+ * whose job is to show the tenant what exists quietly under-reports it. The
+ * product's whole claim is that the record is complete and checkable; a
+ * response that silently isn't is a worse outcome than an error that says so.
+ *
+ * The wire has nowhere to put "and N photos are missing" — `getDiffResponse`
+ * and `getTenancyResponse` are frozen and carry no such field — so the signal
+ * has to be the status code. Handlers turn this into a 503, which is the
+ * honest answer: the evidence exists, this request could not render it, try
+ * again.
+ */
+export class UnsignedEvidenceError extends Error {
+  readonly photoIds: readonly string[];
+  readonly s3Keys: readonly string[];
+
+  constructor(photos: readonly PhotoItem[]) {
+    super(`${photos.length} evidence object(s) could not be signed`);
+    this.name = 'UnsignedEvidenceError';
+    this.photoIds = photos.map((p) => p.photoId);
+    this.s3Keys = photos.map((p) => p.s3Key);
+  }
+}
+
+/**
+ * Every photo the payload is about to omit. Empty is the normal answer.
+ *
+ * Checked up front, across the whole set, so one request reports all of them
+ * rather than one at a time — a systemic signing failure is far more likely
+ * than a single bad object, and an operator should see that in one log line.
+ */
+function unsignable(
+  photos: readonly PhotoItem[],
+  urls: ReadonlyMap<string, ResolvedUrl>,
+): PhotoItem[] {
+  return photos.filter((photo) => !urls.has(photo.s3Key));
+}
+
 /* ── Partitioning ──────────────────────────────────────────────────────────── */
 
 interface Partitioned {
@@ -97,17 +147,16 @@ export function evidenceKeysFor(items: readonly HandoverItem[]): string[] {
 /* ── Photos ────────────────────────────────────────────────────────────────── */
 
 /**
- * Build the wire shape for one photo, or `undefined` if its object could not be
- * signed.
+ * Build the wire shape for one photo.
  *
- * Dropping beats emitting a placeholder. `photoRefSchema` requires a real URL,
- * so a photo with an empty one fails validation at the edge and turns a single
- * unreadable object into a 500 for the entire tenancy — the page that is
- * supposed to show the tenant their evidence.
+ * Total by precondition: callers check `unsignable` first and raise
+ * `UnsignedEvidenceError` before reaching here, so an absent URL at this point
+ * is a bug in this module rather than a condition to paper over. Throwing
+ * keeps that a loud bug instead of a quietly dropped photograph.
  */
-function toPhotoRef(photo: PhotoItem, urls: ReadonlyMap<string, ResolvedUrl>): PhotoRef | undefined {
+function toPhotoRef(photo: PhotoItem, urls: ReadonlyMap<string, ResolvedUrl>): PhotoRef {
   const signed = urls.get(photo.s3Key);
-  if (!signed) return undefined;
+  if (!signed) throw new UnsignedEvidenceError([photo]);
 
   const ref: PhotoRef = {
     photoId: photo.photoId,
@@ -191,6 +240,9 @@ export function buildTenancyAggregate(
   const { tenancy, rooms, photos, diffs, documents } = partition(items);
   if (!tenancy) throw new MissingTenancyItemError();
 
+  const missing = unsignable(photos, urls);
+  if (missing.length > 0) throw new UnsignedEvidenceError(missing);
+
   const labels = new Map(rooms.map((r) => [r.roomId, r.label]));
 
   return {
@@ -209,10 +261,7 @@ export function buildTenancyAggregate(
       ...(tenancy.refundDueDate ? { refundDueDate: tenancy.refundDueDate } : {}),
     },
     rooms: [...rooms].sort((a, b) => a.orderIndex - b.orderIndex).map(toRoomSummary),
-    photos: [...photos]
-      .sort(byPairIndex)
-      .map((p) => toPhotoRef(p, urls))
-      .filter((p): p is PhotoRef => p !== undefined),
+    photos: [...photos].sort(byPairIndex).map((p) => toPhotoRef(p, urls)),
     diffs: diffs.map((d) => toRoomDiff(d, labels.get(d.roomId) ?? d.roomId)),
     documents: documents.map((d) => toDocumentRef(d, urls)),
   };
@@ -258,12 +307,16 @@ export function buildDiffView(
   urls: ReadonlyMap<string, ResolvedUrl>,
 ): GetDiffResponse {
   const { rooms, photos, diffs } = partition(items);
+
+  const missing = unsignable(photos, urls);
+  if (missing.length > 0) throw new UnsignedEvidenceError(missing);
+
   const labels = new Map(rooms.map((r) => [r.roomId, r.label]));
   const order = new Map(rooms.map((r) => [r.roomId, r.orderIndex]));
   const paired = pairPhotosByRoom(photos);
 
   const refs = (list: readonly PhotoItem[]): PhotoRef[] =>
-    list.map((p) => toPhotoRef(p, urls)).filter((p): p is PhotoRef => p !== undefined);
+    list.map((p) => toPhotoRef(p, urls));
 
   const views: RoomDiffView[] = [...diffs]
     .sort((a, b) => (order.get(a.roomId) ?? 0) - (order.get(b.roomId) ?? 0))

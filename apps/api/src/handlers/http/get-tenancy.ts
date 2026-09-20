@@ -15,7 +15,7 @@ import { getTenancyPartition } from '../../adapters/dynamo/evidence-store.js';
 import { signEvidenceGets } from '../../adapters/s3/presigner.js';
 import { buildTenancyAggregate, evidenceKeysFor } from '../../domain/evidence/aggregate.js';
 import { NotOwnerError, assertOwnership } from '../../domain/tenancy/ownership.js';
-import { HttpError, callerSub, ok, parse, withErrors } from './http.js';
+import { HttpError, callerSub, ok, parse, rethrowUnsigned, withErrors } from './http.js';
 import type { ApiEvent, ApiResult } from './http.js';
 import type { TenancyItem } from '@handover/shared';
 
@@ -36,5 +36,9 @@ export const handler = withErrors(async (event: ApiEvent): Promise<ApiResult> =>
   const now = new Date();
   const urls = await signEvidenceGets(evidenceKeysFor(items), now);
 
-  return ok(getTenancyResponseSchema.parse(buildTenancyAggregate(items, urls)));
+  try {
+    return ok(getTenancyResponseSchema.parse(buildTenancyAggregate(items, urls)));
+  } catch (err) {
+    rethrowUnsigned(err, id);
+  }
 });
