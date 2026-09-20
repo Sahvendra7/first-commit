@@ -40,6 +40,17 @@ export interface ComparePhoto {
    * `fallbackAspect` rather than jumping.
    */
   readonly aspect?: number;
+  /**
+   * `PhotoRef.receivedAt` — the **server** clock, which is what the ledger
+   * attests to. Not `exifCapturedAt`, which is device-reported and is not
+   * trusted as authoritative.
+   */
+  readonly receivedAt?: string;
+  /**
+   * `PhotoRef.sha256`. Rendered truncated beneath the frame. This is a
+   * feature, not clutter: the tamper-evidence is the product.
+   */
+  readonly sha256?: string;
 }
 
 /**
@@ -72,6 +83,29 @@ export interface CompareSliderProps {
   readonly beforeLabel?: string;
   readonly afterLabel?: string;
   readonly className?: string;
+  /**
+   * Presigned photo URLs expire in five minutes and a review session outlasts
+   * that. The component surfaces the failure rather than showing a broken
+   * image, and calls this so the caller can re-fetch the aggregate.
+   */
+  readonly onImageError?: (which: 'before' | 'after') => void;
+}
+
+/** Enough of the digest to compare by eye, without a line of hex on a phone. */
+function shortDigest(sha256: string): string {
+  return `${sha256.slice(0, 8)}\u2026${sha256.slice(-4)}`;
+}
+
+function formatReceivedAt(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 const DEFAULT_FALLBACK_ASPECT = 4 / 3;
@@ -88,6 +122,7 @@ export function CompareSlider({
   beforeLabel = 'Move-in',
   afterLabel = 'Move-out',
   className,
+  onImageError,
 }: CompareSliderProps) {
   const frameRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
@@ -99,6 +134,18 @@ export function CompareSlider({
   // presigned photo (PhotoRef carries no dimensions) still gets a correct frame.
   const [measuredBefore, setMeasuredBefore] = useState<number>();
   const [measuredAfter, setMeasuredAfter] = useState<number>();
+  const [failed, setFailed] = useState<{ before: boolean; after: boolean }>({
+    before: false,
+    after: false,
+  });
+
+  const handleImageError = useCallback(
+    (which: 'before' | 'after') => {
+      setFailed((prev) => (prev[which] ? prev : { ...prev, [which]: true }));
+      onImageError?.(which);
+    },
+    [onImageError],
+  );
 
   const isControlled = position !== undefined;
   const value = clamp01(isControlled ? position : uncontrolled);
@@ -212,6 +259,7 @@ export function CompareSlider({
             const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
             if (w > 0 && h > 0) setMeasuredAfter(w / h);
           }}
+          onError={() => handleImageError('after')}
           className="pointer-events-none absolute inset-0 h-full w-full object-contain"
         />
 
@@ -257,6 +305,7 @@ export function CompareSlider({
               const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
               if (w > 0 && h > 0) setMeasuredBefore(w / h);
             }}
+            onError={() => handleImageError('before')}
             className="pointer-events-none absolute inset-0 h-full w-full object-contain"
           />
         </div>
@@ -283,10 +332,52 @@ export function CompareSlider({
         </span>
       </div>
 
+      {failed.before || failed.after ? (
+        <p
+          role="status"
+          data-testid="photo-expired"
+          className="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+        >
+          A photograph could not be loaded. Secure photo links expire after five minutes —
+          reload this page to refresh them.
+        </p>
+      ) : null}
+
       <p id={labelId} className="mt-2 text-xs text-slate-600">
         Drag to compare {beforeLabel.toLowerCase()} with {afterLabel.toLowerCase()}. Use the
         arrow keys for fine control.
       </p>
+
+      {/*
+        The tamper-evidence is the product, so the digest and the timestamp sit
+        under the photographs rather than behind a details panel. `receivedAt`
+        is the server clock — the instant the record attests to.
+      */}
+      {before.sha256 ?? after.sha256 ?? before.receivedAt ?? after.receivedAt ? (
+        <dl
+          data-testid="evidence-meta"
+          className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] leading-tight text-slate-500"
+        >
+          <div>
+            <dt className="font-medium text-slate-600">{beforeLabel}</dt>
+            {before.receivedAt ? <dd>{formatReceivedAt(before.receivedAt)}</dd> : null}
+            {before.sha256 ? (
+              <dd className="font-mono" title={before.sha256}>
+                {shortDigest(before.sha256)}
+              </dd>
+            ) : null}
+          </div>
+          <div>
+            <dt className="font-medium text-slate-600">{afterLabel}</dt>
+            {after.receivedAt ? <dd>{formatReceivedAt(after.receivedAt)}</dd> : null}
+            {after.sha256 ? (
+              <dd className="font-mono" title={after.sha256}>
+                {shortDigest(after.sha256)}
+              </dd>
+            ) : null}
+          </div>
+        </dl>
+      ) : null}
 
       {/*
         Letterbox reconciliation is invisible until the two photos disagree, so
