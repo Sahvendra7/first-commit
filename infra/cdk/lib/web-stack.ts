@@ -100,8 +100,16 @@ export class WebStack extends Stack {
       defaultTtl: Duration.seconds(0),
       maxTtl: Duration.seconds(0),
       minTtl: Duration.seconds(0),
-      enableAcceptEncodingGzip: true,
-      enableAcceptEncodingBrotli: true,
+      /*
+       * No `enableAcceptEncoding*` here. With every TTL at zero CloudFront
+       * classifies this as a caching-disabled policy and rejects the flags
+       * outright — `The parameter EnableAcceptEncodingGzip is invalid for
+       * policy with caching disabled`, which is a deploy-time failure, not a
+       * synth-time one. Those flags only ever controlled how the *cache key*
+       * normalises Accept-Encoding, and a policy that caches nothing has no
+       * key to normalise. Responses are still compressed: that is
+       * `compress: true` on the behaviour below, which is independent of this.
+       */
       queryStringBehavior: CacheQueryStringBehavior.none(),
       headerBehavior: CacheHeaderBehavior.none(),
       cookieBehavior: CacheCookieBehavior.none(),

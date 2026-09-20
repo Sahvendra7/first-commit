@@ -53,11 +53,29 @@ const api = new ApiStack(app, `Handover${stage}Api`, {
 });
 
 /**
- * Static hosting. Deliberately independent of the other three: it holds build
- * output only, so it can be created, destroyed and redeployed without touching
- * the evidence, the table or the API.
+ * Static hosting on S3 + CloudFront. Deliberately independent of the other
+ * three: it holds build output only, so it can be created, destroyed and
+ * redeployed without touching the evidence, the table or the API.
+ *
+ * **Opt-in, because CloudFront is not available on this account.** A deploy
+ * fails at the distribution with:
+ *
+ *   Your account must be verified before you can add new CloudFront
+ *   resources. To verify your account, please contact AWS Support.
+ *
+ * That is an account-level gate, not a template error — the same class of
+ * blocker as the Bedrock one in CLAUDE.md. The stack is kept because it is the
+ * intended long-term hosting and is ready the day verification lands; it is
+ * gated so that `cdk deploy --all` does not fail on a stack that cannot
+ * succeed. Until then the deployed front end is Amplify Hosting
+ * (`apps/web/scripts/deploy.sh`), which fronts its own CloudFront and needs no
+ * verification on this account.
+ *
+ *     cdk deploy Handover${stage}Web -c hosting=cloudfront
  */
-new WebStack(app, `Handover${stage}Web`, { env });
+if (app.node.tryGetContext('hosting') === 'cloudfront') {
+  new WebStack(app, `Handover${stage}Web`, { env });
+}
 
 // The references above already make api depend on data and auth. Stating it
 // keeps the deploy order legible; `addStackDependency` is the non-deprecated
