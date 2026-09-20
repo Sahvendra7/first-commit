@@ -91,14 +91,29 @@ export function App() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-screen-sm px-4 py-6">
-      {demo ? (
-        <p
-          data-testid="demo-badge"
-          className="mb-3 rounded bg-fuchsia-100 px-2 py-1 text-center text-xs font-semibold uppercase tracking-wide text-fuchsia-900"
-        >
-          Demo data — not a real tenancy
+      {/* The product header. It names the app and says in one line what the app
+          is for, so the first screen is never an unlabelled table of rooms. */}
+      <header className="mb-4 border-b border-slate-200 pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">Handover</h1>
+          {demo ? (
+            <span
+              data-testid="demo-badge"
+              className="shrink-0 rounded bg-fuchsia-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-fuchsia-900"
+            >
+              Demo
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-sm text-slate-600">
+          Rental evidence, organized from move-in to deposit recovery.
         </p>
-      ) : null}
+        {demo ? (
+          <p className="mt-1 text-xs text-slate-500">
+            Seeded walkthrough — not a real tenancy. Nothing here is sent anywhere.
+          </p>
+        ) : null}
+      </header>
 
       {/* Configuration is checked before anything else: without it there is no
           backend to talk to, and a blank screen with a console error is the

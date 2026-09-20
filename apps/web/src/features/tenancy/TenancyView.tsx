@@ -14,6 +14,7 @@ import { firstMatchedPair, missingPairReason, resolveRooms } from '../../lib/pai
 import { toDiffAdditions, type MarkedChange } from '../../lib/marked-change.js';
 import { jobForProgress, useJob } from '../../lib/use-job.js';
 import { effectivePhase } from '../../lib/phase.js';
+import { JourneyStages } from './JourneyStages.js';
 import { CompareSlider } from '../compare/CompareSlider.js';
 import { ChangeMarker } from '../compare/ChangeMarker.js';
 import { ConditionSummary } from '../compare/ConditionSummary.js';
@@ -500,6 +501,7 @@ export function TenancyView({
 
   return (
     <div className="space-y-3">
+      <JourneyStages status={tenancy.tenancy.status} />
       {banners}
       {roomsSource === 'aggregate' && diff ? (
         <p className="rounded border border-slate-200 px-3 py-2 text-xs text-slate-600" data-testid="no-diff-note">
