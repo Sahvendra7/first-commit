@@ -453,13 +453,29 @@ export function ConditionSummary({
                 </p>
                 <p className="text-xs text-slate-500">Record {doc.recordRef}</p>
                 {doc.url ? (
-                  <a
-                    href={doc.url}
-                    download
-                    className="mt-1 inline-block text-sm font-medium text-sky-700 underline"
-                  >
-                    Download PDF
-                  </a>
+                  <>
+                    {/*
+                      `min-h-11` (44px) rather than a bare inline link: an
+                      unstyled anchor here measured 20px tall, under the 24px
+                      WCAG 2.5.8 minimum, on the phone this is actually used on.
+                    */}
+                    <a
+                      href={doc.url}
+                      download
+                      data-testid={`download-${doc.documentId}`}
+                      className="mt-1 inline-flex min-h-11 items-center text-sm font-medium text-sky-700 underline"
+                    >
+                      Download PDF
+                    </a>
+                    {/*
+                      A signed URL is temporary access, not the document. It is
+                      rendered straight from the aggregate and never stored;
+                      reloading is what gets a fresh one.
+                    */}
+                    <span className="block text-xs text-slate-500">
+                      This link is temporary — reopen this page to get a fresh one.
+                    </span>
+                  </>
                 ) : (
                   <p className="mt-1 text-xs text-slate-500">Preparing…</p>
                 )}

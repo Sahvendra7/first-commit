@@ -209,3 +209,55 @@ describe('ConditionSummary — recording a decision', () => {
     );
   });
 });
+
+describe('ConditionSummary — document access', () => {
+  const withLetter = (over: Record<string, unknown> = {}) =>
+    renderSummary([room([])], {
+      documents: [
+        {
+          documentId: 'doc_1',
+          docType: 'DEMAND_LETTER',
+          sha256: 'a'.repeat(64),
+          recordRef: 'HND-001',
+          createdAt: '2026-01-02T10:00:00.000Z',
+          url: 'https://example.invalid/letter.pdf?sig=abc',
+          urlExpiresAt: '2026-01-02T10:05:00.000Z',
+        },
+      ],
+      ...over,
+    });
+
+  it('offers the signed URL for download', () => {
+    withLetter();
+    expect(screen.getByTestId('download-doc_1').getAttribute('href')).toContain('letter.pdf');
+  });
+
+  it('gives the download a touch target of at least 44px', () => {
+    withLetter();
+    // WCAG 2.5.8 sets 24px as the floor; a bare inline anchor measured 20px on
+    // a phone, which is the device this screen is actually used on.
+    expect(screen.getByTestId('download-doc_1').className).toContain('min-h-11');
+  });
+
+  it('says the link is temporary rather than implying the document is stored here', () => {
+    withLetter();
+    expect(screen.getByTestId('document-doc_1').textContent).toMatch(/temporary/i);
+  });
+
+  it('shows a preparing state rather than a dead link when there is no URL yet', () => {
+    renderSummary([room([])], {
+      documents: [
+        {
+          documentId: 'doc_2',
+          docType: 'CONDITION_REPORT',
+          sha256: 'b'.repeat(64),
+          recordRef: 'HND-002',
+          createdAt: '2026-01-02T10:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(screen.queryByTestId('download-doc_2')).toBeNull();
+    expect(screen.getByTestId('document-doc_2').textContent).toMatch(/preparing/i);
+  });
+});

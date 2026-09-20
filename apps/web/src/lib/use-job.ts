@@ -70,10 +70,6 @@ export interface UseJobOptions {
   readonly ceilingMs?: number;
 }
 
-function isTerminal(status: JobStatusResponse['status']): boolean {
-  return status === 'DONE' || status === 'FAILED';
-}
-
 /**
  * Watches one job until it settles.
  *
@@ -178,11 +174,6 @@ export function useJob(
   return { state, refresh };
 }
 
-/** True while a watched job is still expected to make progress. */
-export function isJobInFlight(state: JobPollState): boolean {
-  return state.kind === 'POLLING';
-}
-
 /**
  * The job to hand a progress bar, or `undefined` when there is nothing real to
  * draw. Returning `undefined` rather than a zeroed job is deliberate: a bar at
@@ -191,5 +182,3 @@ export function isJobInFlight(state: JobPollState): boolean {
 export function jobForProgress(state: JobPollState): JobStatusResponse | undefined {
   return 'job' in state ? state.job : undefined;
 }
-
-export { isTerminal as isTerminalJobStatus };
