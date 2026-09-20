@@ -55,6 +55,36 @@ beforeAll(() => {
   template = Template.fromStack(api);
 });
 
+/**
+ * The ids of the IAM policies that grant `lambda:InvokeFunction` on a function
+ * whose logical id starts with `target`.
+ *
+ * Matching on the policy's *resource* rather than merely on the presence of
+ * the action is what makes these assertions mean what their names say. A
+ * filter that only looked for the action would count every dispatcher in the
+ * stack against every worker, so adding a third dispatcher for one worker
+ * would fail an assertion about a different worker — which is a test reporting
+ * a change it is not about.
+ */
+const invokersOf = (
+  template: Template,
+  target: string,
+): string[] =>
+  Object.entries(template.findResources('AWS::IAM::Policy'))
+    .filter(([, policy]) => {
+      const statements = (
+        policy as {
+          Properties: { PolicyDocument: { Statement: Record<string, unknown>[] } };
+        }
+      ).Properties.PolicyDocument.Statement;
+      return statements.some((statement) => {
+        const actions = [statement['Action']].flat();
+        if (!actions.includes('lambda:InvokeFunction')) return false;
+        return JSON.stringify(statement['Resource'] ?? '').includes(target);
+      });
+    })
+    .map(([id]) => id);
+
 describe('routes', () => {
   it.each([
     'POST /v1/tenancies',
@@ -64,6 +94,7 @@ describe('routes', () => {
     'GET /v1/tenancies/{id}/diff',
     'PATCH /v1/tenancies/{id}/diff/{roomId}',
     'GET /v1/jobs/{jobId}',
+    'POST /v1/tenancies/{id}/claim',
     'GET /v1/state-rules/{code}',
   ])('exposes %s', (routeKey) => {
     expect(routeFor(routeKey)).toBeDefined();
@@ -104,6 +135,7 @@ describe('authorization (§5.2, §10.2)', () => {
       'GET /v1/tenancies/{id}/diff',
       'PATCH /v1/tenancies/{id}/diff/{roomId}',
       'GET /v1/jobs/{jobId}',
+      'POST /v1/tenancies/{id}/claim',
     ]) {
       expect(routeFor(routeKey).Properties.AuthorizationType).toBe('JWT');
     }
@@ -262,16 +294,11 @@ describe('diff-worker (§5.5, §9.1, §10.3)', () => {
     expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).not.toContain('bedrock:');
   });
 
-  it('is invokable by complete-phase, and by no other HTTP function', () => {
-    // `diff-worker` also holds an invoke grant — for `doc-worker`, not for
-    // itself — so the assertion is about which *HTTP* functions may dispatch.
-    const httpInvokers = Object.entries(template.findResources('AWS::IAM::Policy'))
-      .filter(([, policy]) => JSON.stringify(policy).includes('lambda:InvokeFunction'))
-      .map(([id]) => id)
-      .filter((id) => !id.startsWith('DiffWorkerFn'));
+  it('is invokable by complete-phase, and by nothing else', () => {
+    const invokers = invokersOf(template, 'DiffWorkerFn');
 
-    expect(httpInvokers).toHaveLength(1);
-    expect(httpInvokers[0]).toMatch(/^CompletePhaseFn/);
+    expect(invokers).toHaveLength(1);
+    expect(invokers[0]).toMatch(/^CompletePhaseFn/);
   });
 
   it('tells complete-phase which function to invoke', () => {
@@ -352,17 +379,30 @@ describe('doc-worker (§5.6, §10.3)', () => {
     expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).not.toContain('ses:');
   });
 
-  it('is invoked by complete-phase and by diff-worker, and by nothing else', () => {
-    const invokers = Object.entries(template.findResources('AWS::IAM::Policy'))
-      .filter(([, policy]) => JSON.stringify(policy).includes('lambda:InvokeFunction'))
-      .map(([id]) => id);
+  /**
+   * Three dispatchers, and only three: a move-in or move-out completion, the
+   * diff worker chaining the Exit Report, and the claim endpoint queueing the
+   * demand letter (§8.1, §8.2, §8.3). Each grant is explicit — there is no
+   * blanket "any api handler may invoke any worker".
+   */
+  it('is invoked by complete-phase, diff-worker and create-claim, and nothing else', () => {
+    const invokers = invokersOf(template, 'DocWorkerFn');
 
-    expect(invokers).toHaveLength(2);
+    expect(invokers).toHaveLength(3);
     expect(invokers.some((id) => id.startsWith('CompletePhaseFn'))).toBe(true);
     expect(invokers.some((id) => id.startsWith('DiffWorkerFn'))).toBe(true);
+    expect(invokers.some((id) => id.startsWith('CreateClaimFn'))).toBe(true);
   });
 
-  it('tells both dispatchers which function to invoke', () => {
+  it('is not invokable by an HTTP function that has no reason to', () => {
+    const invokers = invokersOf(template, 'DocWorkerFn');
+
+    for (const prefix of ['GetTenancyFn', 'GetDiffFn', 'PatchDiffFn', 'GetJobFn', 'PresignPhotosFn']) {
+      expect(invokers.some((id) => id.startsWith(prefix))).toBe(false);
+    }
+  });
+
+  it('tells every dispatcher which function to invoke', () => {
     const envOf = (prefix: string): Record<string, unknown> | undefined =>
       (
         Object.entries(template.findResources('AWS::Lambda::Function')).find(([id]) =>
@@ -372,6 +412,7 @@ describe('doc-worker (§5.6, §10.3)', () => {
 
     expect(envOf('CompletePhaseFn')).toHaveProperty('DOC_WORKER_FUNCTION_NAME');
     expect(envOf('DiffWorkerFn')).toHaveProperty('DOC_WORKER_FUNCTION_NAME');
+    expect(envOf('CreateClaimFn')).toHaveProperty('DOC_WORKER_FUNCTION_NAME');
   });
 
   it('is not exposed as an HTTP route', () => {

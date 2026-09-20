@@ -136,6 +136,7 @@ export class ApiStack extends Stack {
     const getDiff = fn('GetDiffFn', 'handlers/http/get-diff.ts');
     const patchDiff = fn('PatchDiffFn', 'handlers/http/patch-diff.ts');
     const getJob = fn('GetJobFn', 'handlers/http/get-job.ts');
+    const createClaim = fn('CreateClaimFn', 'handlers/http/create-claim.ts');
 
     const apiHandlers = [
       createTenancy,
@@ -145,6 +146,7 @@ export class ApiStack extends Stack {
       getDiff,
       patchDiff,
       getJob,
+      createClaim,
     ];
 
     for (const handler of apiHandlers) {
@@ -350,8 +352,13 @@ export class ApiStack extends Stack {
     // actually exists. Both need the name and the right to invoke.
     docWorker.grantInvoke(completePhase);
     docWorker.grantInvoke(diffWorker);
+    // §8.3: the claim endpoint queues the LETTER job and hands it to the same
+    // worker. Three dispatchers, each granted invoke explicitly — there is no
+    // blanket "any api handler may invoke any worker" grant.
+    docWorker.grantInvoke(createClaim);
     completePhase.addEnvironment('DOC_WORKER_FUNCTION_NAME', docWorker.functionName);
     diffWorker.addEnvironment('DOC_WORKER_FUNCTION_NAME', docWorker.functionName);
+    createClaim.addEnvironment('DOC_WORKER_FUNCTION_NAME', docWorker.functionName);
 
     // The read path mints presigned GETs for generated documents, which it can
     // only do with credentials that could perform the GET (see the presign
@@ -422,6 +429,7 @@ export class ApiStack extends Stack {
     route('/v1/tenancies/{id}/diff', HttpMethod.GET, getDiff, 'GetDiff');
     route('/v1/tenancies/{id}/diff/{roomId}', HttpMethod.PATCH, patchDiff, 'PatchDiff');
     route('/v1/jobs/{jobId}', HttpMethod.GET, getJob, 'GetJob');
+    route('/v1/tenancies/{id}/claim', HttpMethod.POST, createClaim, 'CreateClaim');
 
     /**
      * §5.2 and §7: the state-rules route is **public** — no Cognito JWT. It

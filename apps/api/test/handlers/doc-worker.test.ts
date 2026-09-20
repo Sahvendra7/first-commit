@@ -185,6 +185,32 @@ describe('doc-worker — it produces a real document', () => {
     expect(Buffer.from(put?.Body ?? new Uint8Array()).subarray(0, 5).toString()).toBe('%PDF-');
   });
 
+  /**
+   * §5.6's determinism, across a redelivery that happens *later*. Re-running
+   * with the same clock would prove nothing: the only inputs that could drift
+   * are the ones taken from it. `claimJob` admits a redelivery from `RUNNING`
+   * for crash recovery, so two deliveries can overlap — and if the render
+   * moved with the wall clock, the object could end up holding one report
+   * while the DOCUMENT item recorded the other's digest.
+   */
+  it('rewrites byte-identical content, under the same digest, hours later', async () => {
+    arrange();
+    await runDocJob({ tenancyId: TENANCY, jobId: JOB }, deps);
+    const first = Buffer.from(putObject()?.Body ?? new Uint8Array());
+    const firstDoc = documentItem();
+
+    s3.resetHistory();
+    ddb.resetHistory();
+    await runDocJob(
+      { tenancyId: TENANCY, jobId: JOB },
+      { ...deps, now: () => '2026-09-21T03:00:00.000Z' },
+    );
+
+    expect(Buffer.from(putObject()?.Body ?? new Uint8Array()).equals(first)).toBe(true);
+    expect(documentItem()?.['sha256']).toBe(firstDoc?.['sha256']);
+    expect(documentItem()?.['recordRef']).toBe(firstDoc?.['recordRef']);
+  });
+
   it('never writes to the evidence bucket', async () => {
     // Evidence is append-only by bucket policy; a worker that wrote there
     // would be trying to do something the deny statement forbids anyway, but
@@ -212,7 +238,11 @@ describe('doc-worker — it produces a real document', () => {
     const doc = documentItem();
     expect(doc?.['docType']).toBe('CONDITION_REPORT');
     expect(doc?.['recordRef']).toMatch(/^HND-CR-\d{8}-[0-9A-F]{8}$/);
-    expect(doc?.['createdAt']).toBe('2026-09-20T12:00:00.000Z');
+    // The job's creation time, not the render's wall clock. Every instant on
+    // the page derives from this one, so pinning it is what makes a redelivery
+    // reproduce the same bytes — and it keeps the ledger's `createdAt` and the
+    // PDF's own "Generated" line from disagreeing about when it was made.
+    expect(doc?.['createdAt']).toBe('2026-09-20T10:00:00.000Z');
     // Nothing is sent (CLAUDE.md "Scope"), so these must not exist.
     expect(doc).not.toHaveProperty('sentAt');
     expect(doc).not.toHaveProperty('sesMessageId');

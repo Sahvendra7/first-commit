@@ -22,11 +22,28 @@
  */
 import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import { config } from '../config.js';
+import type { LetterJobClaim } from '../claim-job.js';
 
-/** What a worker is invoked with. Kept minimal: ids, never data. */
+/**
+ * What a worker is invoked with. Ids, and for a LETTER job the claim figures.
+ *
+ * The diff and report workers take ids alone and re-read everything else from
+ * the table, which is the right default: it keeps the payload small and keeps
+ * the worker from trusting its caller. The claim is the one exception, and it
+ * is not a relaxation of that posture.
+ *
+ * `packages/shared` is frozen and has no `CLAIM` entity, no field on `JobItem`
+ * and none on `TenancyItem` to hold what a tenant types on the claim form —
+ * and §8.3's sequence shows no claim record either. So the figures ride along
+ * here, and `adapters/claim-job.ts` derives the job id from them. The worker
+ * recomputes that id and refuses a mismatch, so the payload authenticates
+ * itself rather than being taken on trust.
+ */
 export interface WorkerPayload {
   readonly tenancyId: string;
   readonly jobId: string;
+  /** LETTER jobs only. See `adapters/claim-job.ts`. */
+  readonly claim?: LetterJobClaim;
 }
 
 let client: LambdaClient | undefined;
