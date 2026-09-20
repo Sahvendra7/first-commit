@@ -45,6 +45,9 @@ export function DocumentCard({
     <div
       className={[
         'flex gap-4 rounded-2xl border border-line bg-surface p-4 shadow-sm',
+        // A document is the thing the product exists to produce, so the card
+        // lifts a little on approach rather than sitting flat like a row.
+        'transition-shadow duration-[var(--dur-2)] hover:shadow-md',
         className ?? '',
       ]
         .filter(Boolean)
@@ -107,7 +110,7 @@ function SheetGlyph({ ready }: { readonly ready: boolean }) {
   return (
     <svg
       viewBox="0 0 48 62"
-      className="h-[4.25rem] w-[3.25rem] shrink-0"
+      className="h-[4.25rem] w-[3.25rem] shrink-0 drop-shadow-[0_2px_4px_rgb(var(--c-ink)/0.10)]"
       aria-hidden="true"
       focusable="false"
     >

@@ -126,16 +126,20 @@ export function StateRules({ rules, className }: StateRulesProps) {
       {rules.escalationSteps.length > 0 ? (
         <div className="mt-4" data-testid="escalation-steps">
           <h3 className="text-sm font-semibold text-ink">If the deposit is withheld</h3>
-          <ol className="mt-2.5 space-y-2">
+          {/*
+            A numbered list on a hairline, not three cards inside a card. This
+            panel is reference material beside the tenant's actual task; giving
+            each step its own surface made the rail outweigh the letter it sits
+            next to, which is the wrong way round on a screen whose job is to
+            produce that letter.
+          */}
+          <ol className="mt-2.5 space-y-3 border-l border-line pl-3.5">
             {[...rules.escalationSteps]
               .sort((a, b) => a.order - b.order)
-              .map((step) => (
-                <li
-                  key={step.order}
-                  className="rounded-xl border border-line bg-surface p-3 text-sm"
-                  data-testid={`escalation-${step.order}`}
-                >
+              .map((step, index) => (
+                <li key={step.order} className="text-sm" data-testid={`escalation-${step.order}`}>
                   <p className="font-semibold text-ink">
+                    <span className="tnum mr-1.5 text-ink-4">{index + 1}</span>
                     {step.label}
                     {/*
                       `afterDays: 0` means "straight away", not "after 0 days".
@@ -147,7 +151,7 @@ export function StateRules({ rules, className }: StateRulesProps) {
                       </span>
                     ) : null}
                   </p>
-                  <p className="mt-1 text-ink-2">{step.description}</p>
+                  <p className="mt-0.5 leading-relaxed text-ink-2">{step.description}</p>
                 </li>
               ))}
           </ol>
