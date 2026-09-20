@@ -420,6 +420,70 @@ describe('doc-worker (§5.6, §10.3)', () => {
   });
 });
 
+describe('clock-sweeper (§5.7, §8.3, §10.3)', () => {
+  it('runs daily at 09:00 IST, expressed in UTC', () => {
+    // IST is UTC+05:30 and EventBridge schedules in UTC, so 09:00 IST is
+    // 03:30 UTC. `cron(0 9 * * ? *)` would fire at 14:30 local — the half
+    // hour is the whole point of this assertion.
+    template.hasResourceProperties('AWS::Events::Rule', {
+      ScheduleExpression: 'cron(30 3 * * ? *)',
+    });
+  });
+
+  it('targets the sweeper function', () => {
+    const rules = Object.values(template.findResources('AWS::Events::Rule')) as Array<{
+      Properties: { Targets?: Array<{ Arn?: unknown }> };
+    }>;
+
+    expect(rules).toHaveLength(1);
+    expect(JSON.stringify(rules[0]?.Properties.Targets)).toContain('ClockSweeperFn');
+  });
+
+  it('may read and write the table, and touch nothing else', () => {
+    // §10.3: "DDB query on GSI2 + update. No S3, no Bedrock, no SES."
+    const actions = actionsFor('ClockSweeperFn');
+
+    expect(actions).toContain('dynamodb:Query');
+    expect(actions).toContain('dynamodb:UpdateItem');
+    expect(actions.filter((a) => a.startsWith('s3:'))).toEqual([]);
+    expect(actions.filter((a) => a.startsWith('ssm:'))).toEqual([]);
+    expect(actions.filter((a) => a.startsWith('secretsmanager:'))).toEqual([]);
+  });
+
+  it('can reach the sparse index it queries', () => {
+    const policy = Object.entries(template.findResources('AWS::IAM::Policy')).find(([id]) =>
+      id.startsWith('ClockSweeperFnServiceRoleDefaultPolicy'),
+    );
+
+    // `Table.fromTableName` would have produced a grant on `table/<name>`
+    // alone, and the sweeper's Query against GSI2 needs the index ARN — it
+    // would have deployed cleanly and failed at 03:30 with AccessDenied.
+    expect(JSON.stringify(policy?.[1])).toContain('index/*');
+  });
+
+  it('cannot invoke another function — it dispatches nothing', () => {
+    const policy = Object.entries(template.findResources('AWS::IAM::Policy')).find(([id]) =>
+      id.startsWith('ClockSweeperFnServiceRoleDefaultPolicy'),
+    );
+
+    expect(JSON.stringify(policy?.[1])).not.toContain('lambda:InvokeFunction');
+  });
+
+  it('is not exposed as an HTTP route — it runs on a schedule only', () => {
+    expect(routes().some((r) => r.Properties.RouteKey.toLowerCase().includes('sweep'))).toBe(false);
+  });
+
+  it('runs on Node 20, ARM64', () => {
+    const entry = Object.entries(template.findResources('AWS::Lambda::Function')).find(([id]) =>
+      id.startsWith('ClockSweeperFn'),
+    );
+    const props = (entry?.[1] as { Properties: Record<string, unknown> }).Properties;
+
+    expect(props['Runtime']).toBe('nodejs20.x');
+    expect(props['Architectures']).toEqual(['arm64']);
+  });
+});
+
 describe('CORS (§5.1)', () => {
   it('allows the methods the frontend actually issues', () => {
     template.hasResourceProperties('AWS::ApiGatewayV2::Api', {

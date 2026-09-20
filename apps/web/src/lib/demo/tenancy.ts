@@ -113,14 +113,15 @@ export function demoDemandLetter(documentId: string): DocumentRef {
   };
 }
 
+/** How many seeded photographs a room holds for a phase. */
+function countPhotos(roomId: string, phase: PhotoRef['phase']): number {
+  return DEMO_PHOTOS.filter((p) => p.roomId === roomId && p.phase === phase).length;
+}
+
 export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
   tenancy: {
     tenancyId: DEMO_TENANCY_ID,
-    // web-contract §8 seeds this tenancy mid-flow, at MOVEOUT_COMPLETE, so the
-    // demo can reach the compare slider, the review and the letter without a
-    // network — which is the whole reason the demo exists. Capture still works
-    // from here: the demo client increments the room counters on upload.
-    status: 'MOVEOUT_COMPLETE',
+    status: 'MOVEIN_PENDING',
     addressLine: '4B, Nandi Residency, 12th Main',
     city: 'Bengaluru',
     stateCode: 'KA',
@@ -133,17 +134,19 @@ export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
     landlordEmail: 'landlord@example.com',
     createdAt: '2025-09-02T08:55:00.000Z',
   },
+  /*
+   * Counted from `DEMO_PHOTOS` rather than written down, so the header's
+   * "evidence on file" and the per-room counts cannot disagree. Hard-coding
+   * these to zero left the record claiming sixteen photographs while every room
+   * reported none, and `completePhase` then refused to close the stage with
+   * "nothing to submit yet" — the walkthrough dead-ended on its own CTA.
+   */
   rooms: DEMO_ROOMS.map((room) => ({
     roomId: room.roomId,
     label: room.label,
     orderIndex: room.orderIndex,
-    // These are the server's counters, and the server's counters are the only
-    // thing that says evidence exists (risk R5). They must agree with
-    // `photos` below: a fixture that serves 16 PhotoRefs while reporting 0
-    // makes the capture screen say "no photographs recorded" on the same
-    // record whose room card shows eight pairs.
-    photoCountMovein: DEMO_PAIR_INDEXES.length,
-    photoCountMoveout: DEMO_PAIR_INDEXES.length,
+    photoCountMovein: countPhotos(room.roomId, 'MOVEIN'),
+    photoCountMoveout: countPhotos(room.roomId, 'MOVEOUT'),
   })),
   photos: DEMO_PHOTOS,
   // Note: RoomDiff, not RoomDiffView — the aggregate carries no before/after.
@@ -154,8 +157,5 @@ export const demoTenancy: GetTenancyResponse = getTenancyResponseSchema.parse({
     changes: [],
     reviewReason: 'AI_DISABLED',
   })),
-  // web-contract §8: "one CONDITION_REPORT, created at move-in". The job
-  // handler that appends it on DONE is idempotent, so seeding it here does not
-  // produce a duplicate when the walkthrough re-runs the report.
-  documents: [demoConditionReport],
+  documents: [],
 });

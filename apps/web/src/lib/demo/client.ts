@@ -196,26 +196,34 @@ export class DemoApiClient implements HandoverApiClient {
      */
     if (job.status === 'DONE') {
       if (job.type === 'CONDITION_REPORT') {
-        // `status` lives on `tenancy`, not at the top of the aggregate. Written
-        // one level out it type-errors, and before that it silently did
-        // nothing — the walkthrough stayed on MOVEIN_COMPLETE for ever.
-        this.#tenancy = {
-          ...this.#tenancy,
-          tenancy: { ...this.#tenancy.tenancy, status: 'MOVEOUT_PENDING' },
-          documents: this.#tenancy.documents.some((d) => d.docType === 'CONDITION_REPORT')
-            ? this.#tenancy.documents
-            : [...this.#tenancy.documents, demoConditionReport],
-        };
+        this.#advanceTo('MOVEOUT_PENDING');
+        if (!this.#tenancy.documents.some((d) => d.docType === 'CONDITION_REPORT')) {
+          this.#tenancy = {
+            ...this.#tenancy,
+            documents: [...this.#tenancy.documents, demoConditionReport],
+          };
+        }
       } else if (job.type === 'DIFF') {
-        this.#tenancy = {
-          ...this.#tenancy,
-          tenancy: { ...this.#tenancy.tenancy, status: 'AWAITING_REFUND' },
-        };
+        this.#advanceTo('AWAITING_REFUND');
       } else if (job.type === 'LETTER' && job.resultRef) {
         this.#ensureLetterDocument(job.resultRef);
       }
     }
     return job;
+  }
+
+  /**
+   * Moves the seeded tenancy to the next status.
+   *
+   * `status` lives on the nested `tenancy` object, not on the aggregate — the
+   * aggregate carries `rooms` and `documents` beside it. Spreading it at the top
+   * level silently produced an aggregate the schema does not describe.
+   */
+  #advanceTo(status: GetTenancyResponse['tenancy']['status']): void {
+    this.#tenancy = {
+      ...this.#tenancy,
+      tenancy: { ...this.#tenancy.tenancy, status },
+    };
   }
 
   /** Appends the demo demand letter to the aggregate, once. */
