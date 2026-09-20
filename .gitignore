@@ -19,8 +19,12 @@ infra/cdk/cdk.context.json
 !.env.example
 *.pem
 
-# eval golden set: real photographs of a real home. Never commit these.
-eval/golden-set/
+# eval golden set: real photographs of a real home, and answer keys that
+# describe its defects. Never commit these. The format documentation is not
+# itself golden-set data, so it is the one exception.
+# (a directory-level ignore would make the negation below unreachable)
+eval/golden-set/*
+!eval/golden-set/README.md
 
 # local tooling
 .DS_Store

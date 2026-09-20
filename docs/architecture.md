@@ -697,9 +697,18 @@ sequenceDiagram
 
 | Task | Model | Why |
 |---|---|---|
-| Room condition diff | Claude Sonnet on Bedrock (vision) | Image-pair reasoning with instruction-following on exclusion rules; cheaper vision models regress badly on "ignore lighting but catch a stain" |
+| Room condition diff | `moonshotai.kimi-k2.5` via bedrock-mantle (vision) | **Provisional.** Image-pair reasoning with instruction-following on exclusion rules; cheaper vision models regress badly on "ignore lighting but catch a stain" |
 | Letter narrative | Claude Sonnet on Bedrock (text) | Quality matters — this is read by a landlord and possibly an adjudicator |
 | Room label normalisation | No model | String matching is sufficient |
+
+**The diff endpoint is provisional and the choice is not an endorsement.** `bedrock-runtime` is unauthorised on this account — `InvokeModel` and `Converse` both return `AccessDeniedException`, and an AWS support case is open. The working path is the **bedrock-mantle OpenAI-compatible Chat Completions API** (`https://bedrock-mantle.ap-south-1.api.aws/v1/chat/completions`), reached over plain HTTP with a bearer token, carrying both images as `image_url` data-URL parts and the prompt as a trailing `text` part in a single user message. The model available there is `moonshotai.kimi-k2.5`.
+
+Two consequences follow, and both are load-bearing:
+
+- **No tool-use structured output.** Chat Completions on this endpoint gives prose-with-JSON, not a schema-constrained tool call. The validate-and-repair parser in `domain/diff/parse.ts` is therefore not a belt-and-braces extra; it is the only thing standing between the model and the record. §9.3 is amended accordingly.
+- **The adapter sits behind a port.** `domain/diff/port.ts` defines a `RoomDiffPort` taking two image buffers and a prompt version and returning a parsed result or a typed failure — no AWS types, no HTTP types, no model names in the signature. `adapters/bedrock/mantle-room-diff.ts` is one implementation. When the support case clears, swapping to Converse with Claude Sonnet is a new adapter plus an SSM value; nothing in `domain/` changes and no test of the merge, the parser or the claim arithmetic is touched.
+
+Model id is read from SSM `/handover/dev/bedrock/model-id` and the API key from Secrets Manager, so the swap is configuration rather than a deploy of new code.
 
 **No fine-tuning. No training. No embeddings. No vector store. No RAG.** Stated plainly because the reflex to add them is strong and none is justified: the "knowledge base" is a three-row rules table that fits entirely in a prompt.
 
@@ -715,9 +724,13 @@ sequenceDiagram
 | Statutory references, deadlines, authority names | **Data table** | Must be auditable and updatable without touching a prompt |
 | Escalation ladder for a state | **Data table** | Same |
 | Detecting physical changes between two photos | **Model** | Genuinely perceptual; no algorithm available |
+| Deciding which of N model samples to believe | **Code** | Self-consistency merge (`domain/diff/merge.ts`) clusters N sampled responses and keeps only clusters seen in ≥k runs. The agreement frequency — a count the code computed — is the only confidence the system trusts |
+| Which suggestions reach a document | **Code + the tenant** | Provenance is tracked per change; only `TENANT_ACCEPTED` and `TENANT_ADDED` may be rendered |
 | Describing a change in plain language | **Model** | Natural language generation |
 | Whether a change is "normal wear and tear" | **Model, advisory only** | A contested legal judgement — surfaced as "a landlord may argue X; tenants typically counter Y", never as a verdict |
 | Letter prose and tone | **Model, human-reviewed** | Draft, not send |
+
+**Model-reported `confidence` is decoration.** It is carried through and may be displayed, labelled as the model's own self-assessment, and it may route a room to `NEEDS_REVIEW`. It may **never** enter arithmetic, be averaged, be compared across runs as if calibrated, or appear in a generated document. Measured on real pairs it is not calibrated at all: the single most obviously wrong item in the sample — a fabricated fixture — scored `0.7`, while three duplicate entries describing one physical feature scored `0.9`, `0.85` and `0.8`. There is no threshold on this number that separates good output from bad, so the system does not pretend there is one. `agreementFrequency` from the merge is the derived confidence, and it is computed by code.
 
 **Nothing the model produces is sent to a third party without a human approving it.** That is a hard architectural rule, enforced by the fact that no send path is reachable without an explicit user action on a review screen.
 
@@ -732,39 +745,58 @@ The diff prompt has four fixed parts:
 3. An explicit **inclusion list** — walls, floor, ceiling, fixed fittings, fixtures, doors, windows, sanitaryware, built-in cabinetry.
 4. A strict output schema with a `confidence` field per change.
 
-Structured output is obtained via Bedrock **tool-use with a JSON schema**, not by asking for JSON in prose. Validation is Zod on the way out, one repair retry on failure, then `NEEDS_REVIEW`.
+Structured output would be obtained via Bedrock **tool-use with a JSON schema** — and will be, the moment `bedrock-runtime` is authorised (§9.1). On the provisional Chat Completions endpoint it cannot be, so the output contract is enforced entirely by the parser: extract the first balanced JSON object from the response, tolerating leading and trailing whitespace, ```` ```json ```` fences and prose on either side, then Zod-validate. One repair retry on failure, then `NEEDS_REVIEW`. This tolerance is not defensive programming for its own sake: measured over sampled runs, **every** response carried leading whitespace and **one in four** wrapped the object in a fence.
+
+`v2` of the diff prompt adds a fifth fixed element to the four above — an **out-of-frame rule** — and an instruction to report each distinct physical feature exactly once. Both exist because of measured failures (§9.5). Prompts are registered in `apps/api/src/prompts/registry.ts`; `v1` is retained unmodified so the eval can compare the two on identical cases.
 
 ## 9.4 Context construction and cost control
 
 | Control | Implementation | Effect |
 |---|---|---|
 | Image downscale | Client-side to 1600px | Largest single lever on token cost |
+| **Pixel budget, not byte budget** | Downscale before encode; do not tune JPEG quality for cost | Image tokens track **pixel dimensions**, not file size. Measured: every pair billed 2,511 prompt tokens at 921,600 px (1280×720) whether the file was 50 KB or 104 KB — ~1,200 tokens per image. Compression buys transfer time and nothing else |
 | Pair cap | ≤3 representative pairs per room | Bounds worst-case spend per room |
 | Diff cache | `sha256(before+after+promptVersion)` | Re-runs are free; demo re-runs are instant |
 | Per-tenancy budget | Hard cap on model invocations, tracked in DynamoDB | One abusive tenancy cannot generate unbounded spend |
 | Rate limit | Per-user diff jobs per day | Abuse prevention |
 | Bedrock alarm | CloudWatch alarm on daily invocation count | The single most likely source of a surprise bill |
 
-Estimated cost per tenancy: ~6 rooms × 1 vision call (2 images at ~1600px) + 1 letter generation. This is cents, not dollars — but the **unbounded** case (a script creating tenancies in a loop) is dollars, which is why the per-user quota exists.
+Estimated cost per tenancy: ~6 rooms × N vision calls (2 images at ~1600px) + 1 letter generation. Note the N: self-consistency sampling (§9.5) multiplies the per-room image cost by the sample count, and at ~1,200 tokens per image that is the dominant term. N=5 makes a room cost roughly 12,500 prompt tokens rather than 2,500. This is the price of the only reliability mechanism that measurably works, and it is still cents — but it is five times the cents, and it is why the downscale ceiling and the per-tenancy invocation cap are enforced rather than advisory.
 
 ## 9.5 Evaluation
 
-A golden set of ≥20 image pairs from real rooms, each labelled with ground-truth changes and each including at least one **distractor** (moved furniture, different time of day, open curtain, different camera distance).
+A golden set of ≥20 image pairs from real rooms, each labelled with ground-truth changes and each including at least one **distractor** (moved furniture, different time of day, open curtain, different camera distance). A case is a directory holding `before.jpg`, `after.jpg` and `truth.json`; the format is documented in `eval/golden-set/README.md` and the photographs themselves are never committed.
 
-Two metrics, tracked separately because they have opposite cost profiles:
+**The eval samples each pair N times and scores inter-run agreement as a first-class metric.** This is the change the measurements forced. Four metrics, tracked separately because they have different cost profiles:
 
 - **Recall** — did it find the real change? A miss loses the user money.
-- **False positive rate** — did it invent a change? **This is the metric that matters more**, because a change list full of phantoms is worse than no list: it destroys the tenant's credibility if produced in a dispute.
+- **False positive rate** — did it invent a change? **This is the headline metric**, because a change list full of phantoms is worse than no list: it destroys the tenant's credibility in a dispute. The risk is asymmetric and the metric is weighted to say so.
+- **Inter-run agreement** — across N samples of the same pair, how often does the model report the same change? This is what the merge in `domain/diff/merge.ts` consumes, and it is also a diagnosis: a pair the model cannot agree with itself about is a pair the system refuses to make claims about.
+- **Parse health** — parse failure rate, and the incidence of fences and leading whitespace, per prompt version.
 
-The eval runs as a script against the golden set and is the **day-one go/no-go gate** (§18). If FP rate is unacceptable, the fallback is tier 2/3 below.
+The harness runs prompt `v1` and `v2` over the same cases so a prompt change is a measured comparison rather than an opinion.
 
-## 9.6 Fallback strategy (three tiers)
+### The evidence behind the N-sampling design
 
-1. **Model unavailable / throttled** — exponential backoff with jitter, then inference profile to an alternate region, then tier 2.
-2. **Schema validation fails twice, or confidence below threshold** — room marked `NEEDS_REVIEW`; UI presents the pair side by side for manual annotation. The product still works; a human does the perception.
-3. **AI diff globally disabled** (feature flag in SSM) — the system degrades to a pure evidence-capture product: timestamped, hashed, paired before/after sets plus a manual change list. **This is still a shippable, valuable product**, which is precisely why the AI can be treated as an enhancement rather than a dependency.
+Two findings from real photograph pairs on `moonshotai.kimi-k2.5`, both reproduced:
 
-That third tier is the architectural insurance policy behind risk R1.
+**Non-determinism at `temperature: 0`.** Four identical calls on one hard pair returned four different change lists — differing in count, in wording, in reported location and in confidence. **No single change appeared in all four responses.** `temperature: 0` bought nothing. A single call is therefore a sample from a distribution, and treating one sample as an answer is a category error. This is the whole justification for self-consistency: run it N times and report only what survives k of them. On that pair, k=3 of N=4 discards everything, which is the correct answer for a pair this ambiguous.
+
+**Fabrication from reframing.** In one pair the camera moved slightly between the two photographs, bringing a pipe bracket into the after-frame that had been outside the before-frame. The model reported it as a newly installed fixture — **twice, at 0.9 confidence.** The prompt's instruction to "ignore camera angle and distance" did not prevent this, because the model was not reasoning about the angle; it was comparing two frames and honestly reporting that something present in one was absent in the other. This is the most dangerous failure mode the system has: a confident, specific, entirely false claim about a physical alteration, in a document intended for a legal dispute. `v2` of the prompt addresses it with an explicit out-of-frame rule, and the pair is preserved as a hard-negative golden-set case with the answer key "at most one change; no bracket change; the left bracket is a framing artifact".
+
+The eval remains the **day-one go/no-go gate** (§18). It no longer gates whether the system ships — §9.6 settles that — it gates whether the suggestion layer is enabled.
+
+## 9.6 Product tiers — tier 3 is the product
+
+> This section previously described tier 3 as a fallback. The measurements in §9.5 promoted it. It is now the product, and the tiers are listed in the order they matter.
+
+**Tier 3 — the evidence ledger. This is the primary product and it ships standalone.** Timestamped, SHA-256-hashed, EXIF-preserved, room-paired before/after photographs, rendered into a dated Condition Report. Every claim it makes is a claim about what was recorded and when — each one produced by code, reproducible from the stored artifacts, and defensible line by line without reference to a model. It has no dependency on Bedrock, on any endpoint, or on a model's mood on a given afternoon. If the AI layer were deleted tomorrow the product would still do the thing a tenant actually needs, which is to make "the wall was fine when I moved in" a checkable statement instead of an assertion.
+
+**Tier 2 — the model's change list, as a labelled suggestion.** Behind an SSM feature flag, off by default until the eval says otherwise. The output of the merge is presented to the tenant as *suggestions*, in a review UI, visually distinct from recorded fact, and **never as a finding**. Nothing from this layer reaches a PDF without passing through an explicit tenant `ACCEPT` (§9.7, and the provenance rule in `domain/diff/human-edits.ts`). A room whose samples do not agree, or whose parse fails twice, becomes `NEEDS_REVIEW` — a manual-annotation slot, not a gap and not a guess.
+
+**Tier 1 — degradations within the suggestion layer.** Throttling: exponential backoff with jitter, then an alternate-region inference profile, then `NEEDS_REVIEW`. Parse failure: one repair retry, then `NEEDS_REVIEW`. Disagreement below k: the cluster is dropped silently, which is the merge working as designed and not an error.
+
+The inversion matters more than it looks. Under the old ordering, a bad FP rate was a crisis: the feature at the centre of the product was unusable and there was a scramble to a fallback. Under this ordering, a bad FP rate is a flag that stays off — the product ships either way, and the AI layer earns its way in by measurement. That is the architectural insurance policy behind risk R1, and it is now the default state rather than the contingency.
 
 ## 9.7 Guardrails and observability
 
@@ -1113,7 +1145,7 @@ handover/
 - One role. No RBAC.
 - Polling for job status. No WebSockets.
 - One PDF template engine. Two templates: the Condition Report (parameterised by phase, so it covers the Exit Report) and the Demand Letter.
-- Sequential room processing inside one `diff-worker` invocation. ≤8 rooms × ~20s is well inside a 300s timeout.
+- Sequential room processing inside one `diff-worker` invocation. ≤8 rooms × ~20s is well inside a 300s timeout. **The N samples for a single room run concurrently** — sequentially, N=5 at ~20s a call would put a six-room job past the timeout, so the per-room budget stays one call's latency even though it is five calls' spend.
 
 ## 15.3 Explicitly not built
 
@@ -1156,7 +1188,7 @@ Landlord accounts and the two-sided consent model. Video capture. Offline captur
 
 | # | Risk | Why it matters | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|---|
-| **R1** | **AI diff false positives** — model reports changes caused by lighting, angle or moved furniture | Sits on the critical path of the core value. A change list full of phantoms is worse than none: it destroys the user's credibility in a real dispute | **High** | **Critical** | Exclusion-list prompt; confidence thresholds; golden-set eval as a **day-one go/no-go gate**; mandatory human accept/reject; three-tier fallback (§9.6) where tier 3 is still a shippable product |
+| **R1** | **AI diff false positives** — model reports changes caused by lighting, angle or moved furniture | Sits on the critical path of the core value. A change list full of phantoms is worse than none: it destroys the user's credibility in a real dispute | **High** | **Critical** | **Measured and confirmed, worse than assumed — see §9.5.** Mitigation is now structural rather than prompt-side: the evidence ledger (§9.6 tier 3) is the product and the change list is a suggestion layer behind an SSM flag, off by default. Plus: exclusion-list and out-of-frame prompt rules; N-sample self-consistency merge (model confidence is not a threshold and never was); golden-set eval as the **day-one go/no-go gate** on the flag; mandatory human accept/reject before anything renders |
 | **R2** | **Diff recall failure** — model misses a real change | User loses money believing they have proof | Medium | High | Tune the threshold toward sensitivity, since a reviewed false positive costs a click while a miss costs rupees; always show the raw pair so the human can see what the machine did not |
 | **R3** | **Framing drift** between move-in and move-out photos | Degrades diff quality at the input, which no prompt can fix | High | High | Show the move-in thumbnail beside the capture control with instructional copy; store `pair_index` explicitly; treat poor framing as a `NEEDS_REVIEW` trigger rather than a silent bad result |
 | **R4** | **Evidence integrity is asserted, not proven** — hashes are self-generated, so a sufficiently motivated challenger could argue the operator could have manufactured them | Undermines the product's core claim if contested | Low now, High if the product matters | High | Never claim legal admissibility; claim tamper-evidence. Add RFC 3161 timestamping or external anchoring at V2 (§16) |
@@ -1244,7 +1276,9 @@ AI            Bedrock Claude Sonnet, two bounded tasks:
                 (2) letter narrative only
               ALL arithmetic, dates, statutes, escalation paths = code + data table
               Cache key = sha256(before + after + promptVersion)
-              Three-tier fallback; tier 3 is still a shippable product
+              Tier 3 (hashed, dated, paired evidence ledger) IS the product
+              AI change list = labelled suggestion behind an SSM flag, off by default
+              N-sample self-consistency merge in code; model confidence is decoration
               No RAG, no embeddings, no vector DB, no fine-tuning
 
 Security      Cognito auth; single owner role; assertOwnership() in every handler

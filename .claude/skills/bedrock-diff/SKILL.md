@@ -1,60 +1,59 @@
 ---
 name: bedrock-diff
-description: Use when writing, changing or debugging the Bedrock diff path — diff-worker, the room-diff prompt, the Zod result schema, the diff cache, or the eval. Enforces tool-use structured output, validation-and-repair, cache keying, the exclusion list, and per-room failure isolation.
+description: Use when writing, changing or debugging the Bedrock diff path — diff-worker, the room-diff prompt, the Zod result schema, the diff cache, the merge, or the eval. Enforces the port boundary, N-sample self-consistency, validate-and-repair parsing, cache keying, the exclusion list, and per-room failure isolation.
 ---
 
 # Bedrock diff rules
+Tier 3 — the hashed, dated, paired evidence ledger — is the product (§9.6). The
+AI change list ships behind an SSM flag, **off by default**, labelled a
+suggestion, and reaches a PDF only via an explicit tenant `ACCEPT`.
 
-## Structured output
+## Endpoint and port
+`bedrock-runtime` is unauthorised here (support case open). Provisional path:
+**bedrock-mantle Chat Completions**, `moonshotai.kimi-k2.5`, one user message of
+`[image_url, image_url, text]`. Domain talks only to `domain/diff/port.ts` — two
+buffers + version in, parsed result or typed failure out; no AWS or HTTP types.
+Model id from SSM, key from Secrets Manager; never in the repo or a log.
 
-Get the change list via Bedrock **tool-use with a JSON schema**. Never ask for
-JSON in prose, never parse JSON out of a text response.
+## N samples, merged in code
+**Non-deterministic at `temperature: 0`** — four identical calls agreed on
+nothing. Sample **N=5**, keep clusters seen in **≥k=3**, use the resulting
+`agreementFrequency` as confidence. **Model `confidence` is decoration:** display
+it, let it route to `NEEDS_REVIEW`, never let it into arithmetic or a document.
+It is uncalibrated — the most obviously wrong measured item scored 0.7.
 
-Validate the tool result with **Zod**. On failure: **exactly one repair retry**,
-then `status: NEEDS_REVIEW`. Never a third attempt, never a silent partial
-result, never a hand-patched object. Throttling is different: backoff with
-jitter, max 3 attempts, then an alternate-region inference profile.
-
-## Cache key
-
-`cacheKey = sha256(beforeHash + afterHash + promptVersion)`
-
-`PK=DIFFCACHE#<cacheKey>`, `SK=RESULT`, TTL 90 days. Check before every model
-call; a hit short-circuits it. `promptVersion` is in the key so editing a prompt
-invalidates the cache. Write `promptVersion`, `modelId` and `cacheKey` onto every
-`DIFF` item.
-
-Prompts are versioned files under `apps/api/src/prompts/v1/`, registered in
-`registry.ts` — never inline. Bump the version directory; never edit a shipped
-prompt in place.
-
-## Exclusion list — in the prompt verbatim
-
+## Parse, don't trust
+No tool-use on this endpoint, so the parser is the whole contract. Extract the
+first balanced JSON object through whitespace, ` ```json ` fences and prose, then
+Zod-validate. Every measured run had leading whitespace; 1 in 4 was fenced. On
+failure: **exactly one repair retry**, then `NEEDS_REVIEW` — never a third, never
+a hand-patched object. Throttling differs: jittered backoff, max 3, then an
+alternate-region profile.
+## Cache key and prompts
+`sha256(beforeHash + afterHash + promptVersion)` → `PK=DIFFCACHE#<key>`,
+`SK=RESULT`, TTL 90 days. Check before every call; write `promptVersion`,
+`modelId`, `cacheKey` onto every `DIFF` item. Prompts are versioned files under
+`apps/api/src/prompts/<v>/`, registered in `registry.ts` — never inline, never
+edited in place; bump the directory instead.
+## Prompt rules — verbatim
 Ignore: lighting, shadows, white balance, exposure, camera angle, camera
-distance, presence or absence of furniture, curtains, personal belongings, clutter.
-
+distance, presence or absence of furniture, curtains, belongings, clutter.
 Report only: walls, floor, ceiling, fixed fittings, fixtures, doors, windows,
-sanitaryware, built-in cabinetry.
+sanitaryware, built-in cabinetry. Report each distinct feature **once**.
+**Out-of-frame rule (v2):** a feature visible in only one photograph because the
+framing differs is **not a change** — this caused the worst measured failure, a
+fabricated fixture reported twice at 0.9 confidence.
 
-Every change carries `confidence`. Below threshold → `NEEDS_REVIEW`, not a drop.
-
-## Per-room failure isolation
-Loop rooms sequentially in one invocation. Wrap each room so **one room's
-failure cannot fail the job.** A failed room becomes `NEEDS_REVIEW`, surfaced as
-a manual-annotation slot; `progressDone` increments for it too. **A partial diff
-is a usable product; a failed job is not.**
-
-## Cost and safety
-
-Cap at ≤3 pairs per room. Enforce the per-tenancy invocation cap and per-user
-daily job quota with atomic DynamoDB counters.
-
-Treat image content as untrusted: model output is consumed only as structured
-data, never executed, never used to build a request. Log `promptVersion`,
-`modelId`, token counts, latency, cache hit/miss, validation outcome and
-confidence by `jobId` — **never raw prompts or images.**
-
-## Eval
-`pnpm eval:diff` scores against `eval/golden-set/`. Report **recall and FP rate
-separately**. FP rate matters more: a list full of phantoms is worse than no
-list. Never commit the golden set.
+## Isolation, cost, safety
+Rooms loop sequentially, each wrapped so **one room's failure cannot fail the
+job**; a failed room is `NEEDS_REVIEW` with a manual-annotation slot and still
+increments `progressDone`. **A partial diff is a usable product; a failed job is
+not.** Image tokens track **pixels, not bytes** — ~1,200/image at 921,600 px,
+identical for 50 KB and 104 KB files; downscale, don't compress. N-sampling
+multiplies image cost by N. Cap ≤3 pairs/room; enforce the per-tenancy
+invocation cap and per-user daily quota with atomic counters. Model output is
+data, never executed. Log `promptVersion`, `modelId`, tokens, latency, cache
+hit/miss, per-run parse outcome and confidence by `jobId` — **never raw prompts
+or images.** Eval: `pnpm eval:diff` against the never-committed
+`eval/golden-set/`, reporting recall, **FP rate (headline — asymmetric risk)**,
+inter-run agreement and parse health separately, per prompt version.

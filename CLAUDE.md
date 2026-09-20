@@ -11,6 +11,24 @@ the deposit is withheld.
 deviate from it. When this file and the spec disagree, the spec wins. Section
 references below (§) point into it.
 
+## What the product is
+
+**The evidence ledger is the product.** Timestamped, hashed, paired before/after
+photographs and the dated Condition Report built from them — all of it produced
+by code, all of it reproducible from stored artifacts. It ships standalone.
+
+**The AI change list is a suggestion layer, not a finding.** It sits behind an
+SSM feature flag, off by default, is labelled as a suggestion wherever it is
+shown, and reaches a PDF only through an explicit tenant `ACCEPT`. This is not
+caution for its own sake: measured on real pairs, the model is non-deterministic
+at `temperature: 0` and fabricates confidently. See §9.5 and §9.6 — both were
+amended after the measurements, and §9.6 is now "tier 3 is the product".
+
+Model-reported `confidence` is **decoration**. It may be displayed and it may
+route a room to `NEEDS_REVIEW`. It may never enter arithmetic or a document.
+The trusted confidence is `agreementFrequency` — computed by code, in
+`domain/diff/merge.ts`, from N sampled responses.
+
 ## Scope
 
 - **Solo developer, 4 days.** When in doubt, cut scope rather than add.
@@ -40,9 +58,17 @@ references below (§) point into it.
 
 React 18 + TypeScript + Vite + Tailwind · API Gateway HTTP API + Cognito JWT
 authorizer · Lambda Node 20 ARM64 · DynamoDB single-table on-demand · S3
-(versioned) · Bedrock Claude Sonnet · EventBridge · AWS CDK in TypeScript ·
+(versioned) · Bedrock vision · EventBridge · AWS CDK in TypeScript ·
 Zod · Vitest + `aws-sdk-client-mock` · `pdf-lib` · CloudWatch + X-Ray.
 (The spec's stack also lists SES; it is cut for the solo build — see "Scope".)
+
+**Bedrock, provisionally:** `bedrock-runtime` is unauthorised on this account
+(AWS support case open), so the diff path calls the **bedrock-mantle
+OpenAI-compatible Chat Completions** endpoint with `moonshotai.kimi-k2.5` over
+plain HTTP. That means no tool-use structured output, which is why
+`domain/diff/parse.ts` exists. The adapter sits behind `domain/diff/port.ts`;
+switching back to Converse + Claude Sonnet is a new adapter and an SSM value,
+not a domain change. Do not let the endpoint leak past the port.
 
 Not in this system: Redis, SQS/SNS, Step Functions, RDS/Postgres, vector DB,
 embeddings, RAG, fine-tuning, Kubernetes, containers, microservices, WebSockets.
@@ -96,7 +122,12 @@ pnpm eval:diff               # golden-set go/no-go gate (§9.5)
 - **Never claim something works without running it and showing the output.** Not
   "the lint rule should catch this" — run it, paste the failure. Not "tests
   pass" — paste the run. If you did not execute it, say you did not.
-- Prompts are versioned files in `apps/api/src/prompts/`, never inline strings.
+- Prompts are versioned files in `apps/api/src/prompts/<version>/`, registered in
+  `prompts/registry.ts`, never inline strings. Never edit a shipped prompt in
+  place — add a version directory, so the cache key and the provenance of every
+  past result stay honest. `v1` is retained for eval comparison; `v2` is current.
+- **Never treat one model call as an answer.** Sample N (default 5), merge in
+  code, keep only what ≥k (default 3) runs agree on.
 - **`scaffold.ts` files containing only `export {}` are placeholders** so empty
   packages typecheck. Delete the file when real code lands in that package.
   Never import from one.
