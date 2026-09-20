@@ -13,7 +13,12 @@
 import { getTenancyResponseSchema, tenancyPathSchema } from '@handover/shared';
 import { getTenancyPartition } from '../../adapters/dynamo/evidence-store.js';
 import { signEvidenceGets } from '../../adapters/s3/presigner.js';
-import { buildTenancyAggregate, evidenceKeysFor } from '../../domain/evidence/aggregate.js';
+import { signDocumentGets } from '../../adapters/s3/document-writer.js';
+import {
+  buildTenancyAggregate,
+  documentKeysFor,
+  evidenceKeysFor,
+} from '../../domain/evidence/aggregate.js';
 import { NotOwnerError, assertOwnership } from '../../domain/tenancy/ownership.js';
 import { HttpError, callerSub, ok, parse, rethrowUnsigned, withErrors } from './http.js';
 import type { ApiEvent, ApiResult } from './http.js';
@@ -34,7 +39,15 @@ export const handler = withErrors(async (event: ApiEvent): Promise<ApiResult> =>
   }
 
   const now = new Date();
-  const urls = await signEvidenceGets(evidenceKeysFor(items), now);
+  // Two buckets, two signers. Evidence and generated documents live apart and
+  // are governed by different rules (§5.8), so each is signed against the
+  // bucket it is actually in; merging the results is safe because the keys are
+  // distinct and the assembler looks them up by key.
+  const [evidenceUrls, documentUrls] = await Promise.all([
+    signEvidenceGets(evidenceKeysFor(items), now),
+    signDocumentGets(documentKeysFor(items), now),
+  ]);
+  const urls = new Map([...evidenceUrls, ...documentUrls]);
 
   try {
     return ok(getTenancyResponseSchema.parse(buildTenancyAggregate(items, urls)));

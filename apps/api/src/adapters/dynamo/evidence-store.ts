@@ -17,6 +17,7 @@ import {
   diffCachePk,
   diffCacheSk,
   diffSkPrefix,
+  documentSkPrefix,
   jobPk,
   jobSk,
   key,
@@ -27,6 +28,7 @@ import {
 } from '@handover/shared';
 import type {
   DiffCacheItem,
+  DocumentItem,
   HandoverItem,
   JobItem,
   JobStatus,
@@ -674,4 +676,68 @@ export async function recordRoomDiffForJob(args: {
   throw new WriteContentionError(
     `Could not record diff for ${tenancyId}/${roomId} after ${attempts} attempts`,
   );
+}
+
+/* ── Documents ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Record a generated document.
+ *
+ * Unconditional, unlike most writes here, and deliberately: rendering is
+ * deterministic (§5.6), so regenerating a report produces byte-identical
+ * content under the same `documentId`, and the write is idempotent by content
+ * rather than by condition. The documents bucket is versioned, so an overwrite
+ * keeps its predecessor either way.
+ */
+export async function putDocument(item: DocumentItem): Promise<void> {
+  await documentClient().send(
+    new PutCommand({
+      TableName: config.tableName(),
+      Item: { ...item, ...key.document(item.tenancyId, item.documentId) },
+    }),
+  );
+}
+
+/** Every document generated for a tenancy. */
+export async function getDocuments(tenancyId: string): Promise<DocumentItem[]> {
+  const out = await documentClient().send(
+    new QueryCommand({
+      TableName: config.tableName(),
+      KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+      ExpressionAttributeNames: { '#pk': 'PK', '#sk': 'SK' },
+      ExpressionAttributeValues: { ':pk': tenancyPk(tenancyId), ':prefix': documentSkPrefix() },
+      ConsistentRead: true,
+    }),
+  );
+  return (out.Items ?? []) as DocumentItem[];
+}
+
+/**
+ * Set a job's absolute progress.
+ *
+ * The diff path advances its counter with an atomic `ADD` inside the same
+ * transaction as the room it counts, because there it is counting many
+ * independent units and a redelivery must not double-count. A document job has
+ * exactly one unit, so there is nothing to accumulate: the worker knows the
+ * final number and writes it. An absolute `SET` is also idempotent by nature,
+ * which an `ADD` here would not be.
+ */
+export async function setJobProgress(jobId: string, progressDone: number): Promise<void> {
+  try {
+    await documentClient().send(
+      new UpdateCommand({
+        TableName: config.tableName(),
+        Key: key.job(jobId),
+        UpdateExpression: 'SET #progressDone = :done',
+        ConditionExpression: 'attribute_exists(PK)',
+        ExpressionAttributeNames: { '#progressDone': 'progressDone' },
+        ExpressionAttributeValues: { ':done': progressDone },
+      }),
+    );
+  } catch (err) {
+    // A job that vanished mid-run is the terminal write's problem to report,
+    // not the progress bar's.
+    if (isConditionalFailure(err)) return;
+    throw err;
+  }
 }

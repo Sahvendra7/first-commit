@@ -47,10 +47,13 @@ import {
   getRooms,
   getTenancy,
   putDiffCache,
+  putJob,
   recordRoomDiffForJob,
   DIFF_CACHE_TTL_SECONDS,
 } from '../../adapters/dynamo/evidence-store.js';
 import { config } from '../../adapters/config.js';
+import { phaseJobId } from '../../adapters/job-id.js';
+import { invokeWorker } from '../../adapters/lambda/dispatch.js';
 import { diffCacheKey } from '../../adapters/diff-cache-key.js';
 import { getEvidenceImage } from '../../adapters/s3/object-reader.js';
 import { aiDiffEnabled } from '../../adapters/ssm/feature-flags.js';
@@ -69,6 +72,7 @@ import {
 import type { PersistedDiffItem } from '../../domain/diff/persisted.js';
 import type { RoomDiffPort } from '../../domain/diff/port.js';
 import { CURRENT_PROMPT_VERSION, type PromptVersion } from '../../prompts/registry.js';
+import { jobPk, jobSk } from '@handover/shared';
 import type { DiffCacheItem, DiffChange, JobItem } from '@handover/shared';
 
 /** What `complete-phase` invokes this worker with. */
@@ -427,6 +431,66 @@ export async function runDiffJob(
   await finishJob(jobId, 'DONE', deps.now(), { resultRef: diffResultRef(tenancyId) });
 
   deps.logger.info('diff.job.finished', { jobId, tenancyId, rooms: plans.length });
+
+  // §8.2: the Exit Report follows the diff. Chained from here rather than from
+  // `complete-phase`, because the report's change list is what this job just
+  // produced — starting it at completion would race the rooms it prints.
+  //
+  // Deliberately after the diff job is DONE, and deliberately unable to fail
+  // it: the diff is a complete, readable result on its own, and a tenant whose
+  // report did not start still has their compare screen. Re-completing the
+  // phase re-dispatches from the existing QUEUED job, the same recovery path
+  // the capture phases use.
+  await startExitReport(tenancyId, deps);
+}
+
+/** Job records live 7 days (§6.4) — the same TTL `complete-phase` writes. */
+const JOB_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+async function startExitReport(tenancyId: string, deps: DiffJobDeps): Promise<void> {
+  const docJobId = phaseJobId(tenancyId, 'EXIT_REPORT');
+  const now = deps.now();
+
+  try {
+    await putJob({
+      PK: jobPk(docJobId),
+      SK: jobSk(),
+      entityType: 'JOB',
+      jobId: docJobId,
+      tenancyId,
+      jobType: 'EXIT_REPORT',
+      status: 'QUEUED',
+      // One artifact, so one unit of progress.
+      progressTotal: 1,
+      progressDone: 0,
+      createdAt: now,
+      updatedAt: now,
+      ttl: Math.floor(Date.now() / 1000) + JOB_TTL_SECONDS,
+    });
+  } catch (error) {
+    // `attribute_not_exists(PK)` lost: the report job already exists, which a
+    // redelivery of this diff job is expected to find. Not an error.
+    if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') {
+      deps.logger.warn('diff.job.exit_report_not_created', {
+        tenancyId,
+        error: (error as Error)?.name ?? 'unknown',
+      });
+      return;
+    }
+    deps.logger.info('diff.job.exit_report_exists', { tenancyId, jobId: docJobId });
+    return;
+  }
+
+  const worker = process.env['DOC_WORKER_FUNCTION_NAME']?.trim();
+  if (!worker) {
+    deps.logger.warn('diff.job.doc_worker_not_configured', { jobId: docJobId });
+    return;
+  }
+  if (!(await invokeWorker(worker, { tenancyId, jobId: docJobId }))) {
+    deps.logger.warn('diff.job.exit_report_dispatch_failed', { jobId: docJobId });
+    return;
+  }
+  deps.logger.info('diff.job.exit_report_queued', { tenancyId, jobId: docJobId });
 }
 
 export async function handler(event: DiffWorkerEvent): Promise<void> {

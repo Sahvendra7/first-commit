@@ -7,8 +7,8 @@
  * deploy together. What differs between them is their IAM role, and that is the
  * point — §10.3's least-privilege table is reproduced in the grants below.
  *
- * The capture path and `diff-worker` are wired here. `doc-worker` and
- * `clock-sweeper` join this same stack when their paths are built.
+ * The capture path, `diff-worker` and `doc-worker` are wired here.
+ * `clock-sweeper` joins this same stack when its path is built.
  *
  * ── One function per route, and why that is not a service split ─────────────
  * §3.2 names five *logical* units, of which `api-handler` is one. This stack
@@ -308,6 +308,61 @@ export class ApiStack extends Stack {
     diffWorker.grantInvoke(completePhase);
     completePhase.addEnvironment('DIFF_WORKER_FUNCTION_NAME', diffWorker.functionName);
 
+    /* ── doc-worker (§5.6) ────────────────────────────────────────────────── */
+
+    /**
+     * Renders the Condition and Exit Reports.
+     *
+     * Sized between the API defaults and `diff-worker`: it embeds up to a few
+     * dozen photographs into a PDF, which is memory-bound rather than
+     * latency-bound, and needs no model call at all.
+     */
+    const docWorker = fn('DocWorkerFn', 'handlers/events/doc-worker.ts', {
+      memorySize: 1024,
+      timeout: Duration.minutes(2),
+    });
+
+    /**
+     * §10.3: `s3:GetObject` on evidence, `s3:PutObject` on documents, DDB
+     * read/write. The asymmetry is the point — it reads the photographs and
+     * writes only derivatives.
+     *
+     * **No SES.** The skill's IAM table grants this function `SendRawEmail`;
+     * that is omitted because delivery is cut from this build (CLAUDE.md
+     * "Scope"). The worker has no mail client and no recipient, so the grant
+     * would be a standing permission with no code behind it — and an unused
+     * send permission on a function that handles a tenant's address and
+     * photographs is exactly the kind of thing that later becomes an
+     * accidental send path.
+     */
+    evidenceBucket.grantRead(docWorker, 'tenancies/*');
+    table.grantReadWriteData(docWorker);
+    docWorker.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ['s3:PutObject'],
+        resources: [documentsBucket.arnForObjects('tenancies/*')],
+      }),
+    );
+
+    // §8.1 dispatches the Condition Report from phase completion; §8.2 chains
+    // the Exit Report from `diff-worker`, once the change list it prints
+    // actually exists. Both need the name and the right to invoke.
+    docWorker.grantInvoke(completePhase);
+    docWorker.grantInvoke(diffWorker);
+    completePhase.addEnvironment('DOC_WORKER_FUNCTION_NAME', docWorker.functionName);
+    diffWorker.addEnvironment('DOC_WORKER_FUNCTION_NAME', docWorker.functionName);
+
+    // The read path mints presigned GETs for generated documents, which it can
+    // only do with credentials that could perform the GET (see the presign
+    // note above).
+    const signDocumentGrant = new PolicyStatement({
+      effect: Effect.ALLOW,
+      actions: ['s3:GetObject'],
+      resources: [documentsBucket.arnForObjects('tenancies/*')],
+    });
+    getTenancy.addToRolePolicy(signDocumentGrant);
+
     /* ── HTTP API (§5.2) ──────────────────────────────────────────────────── */
 
     const authorizer = new HttpJwtAuthorizer(
@@ -390,5 +445,6 @@ export class ApiStack extends Stack {
     new CfnOutput(this, 'ApiUrl', { value: this.httpApi.apiEndpoint });
     new CfnOutput(this, 'PhotoIngestFunctionName', { value: photoIngest.functionName });
     new CfnOutput(this, 'DiffWorkerFunctionName', { value: diffWorker.functionName });
+    new CfnOutput(this, 'DocWorkerFunctionName', { value: docWorker.functionName });
   }
 }

@@ -144,6 +144,23 @@ export function evidenceKeysFor(items: readonly HandoverItem[]): string[] {
   return [...keys];
 }
 
+/**
+ * Every distinct generated-document object the caller must sign.
+ *
+ * Kept separate from `evidenceKeysFor` because the two live in **different
+ * buckets** and are signed by different adapters — evidence in the versioned,
+ * delete-denied bucket, documents in the regenerable one. Returning them in
+ * one list would invite one call site to sign both against whichever bucket it
+ * happened to have to hand, and produce URLs that 404 at the worst moment.
+ */
+export function documentKeysFor(items: readonly HandoverItem[]): string[] {
+  const keys = new Set<string>();
+  for (const item of items) {
+    if (item.entityType === 'DOCUMENT') keys.add(item.s3Key);
+  }
+  return [...keys];
+}
+
 /* ── Photos ────────────────────────────────────────────────────────────────── */
 
 /**

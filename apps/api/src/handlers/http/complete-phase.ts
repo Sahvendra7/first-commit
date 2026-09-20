@@ -175,7 +175,11 @@ export const handler = withErrors(async (event: ApiEvent): Promise<ApiResult> =>
     tenancyId: id,
     jobType: JOB_FOR_PHASE[phase],
     status: 'QUEUED',
-    progressTotal: rooms.length,
+    // A DIFF job's progress is per room (§7: "a real progress bar, not a fake
+    // one"). A document job has one artifact, so its total is 1 — reporting
+    // the room count there would show a bar that jumps from 0 to 6 in one
+    // step, which is a fake progress bar wearing a real one's clothes.
+    progressTotal: JOB_FOR_PHASE[phase] === 'DIFF' ? rooms.length : 1,
     progressDone: 0,
     createdAt: now,
     updatedAt: now,

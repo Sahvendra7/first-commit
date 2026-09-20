@@ -262,13 +262,16 @@ describe('diff-worker (§5.5, §9.1, §10.3)', () => {
     expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).not.toContain('bedrock:');
   });
 
-  it('is invokable by complete-phase and by no other HTTP function', () => {
-    const invokers = Object.entries(template.findResources('AWS::IAM::Policy')).filter(([, policy]) =>
-      JSON.stringify(policy).includes('lambda:InvokeFunction'),
-    );
+  it('is invokable by complete-phase, and by no other HTTP function', () => {
+    // `diff-worker` also holds an invoke grant — for `doc-worker`, not for
+    // itself — so the assertion is about which *HTTP* functions may dispatch.
+    const httpInvokers = Object.entries(template.findResources('AWS::IAM::Policy'))
+      .filter(([, policy]) => JSON.stringify(policy).includes('lambda:InvokeFunction'))
+      .map(([id]) => id)
+      .filter((id) => !id.startsWith('DiffWorkerFn'));
 
-    expect(invokers).toHaveLength(1);
-    expect(invokers[0]?.[0]).toMatch(/^CompletePhaseFn/);
+    expect(httpInvokers).toHaveLength(1);
+    expect(httpInvokers[0]).toMatch(/^CompletePhaseFn/);
   });
 
   it('tells complete-phase which function to invoke', () => {
@@ -294,6 +297,85 @@ describe('diff-worker (§5.5, §9.1, §10.3)', () => {
 
     expect(existsSync(join(dir, 'prompts', 'v1', 'room-diff.md'))).toBe(true);
     expect(existsSync(join(dir, 'prompts', 'v2', 'room-diff.md'))).toBe(true);
+  });
+});
+
+describe('doc-worker (§5.6, §10.3)', () => {
+  const docWorker = (): { Properties: Record<string, unknown> } => {
+    const entry = Object.entries(template.findResources('AWS::Lambda::Function')).find(([id]) =>
+      id.startsWith('DocWorkerFn'),
+    );
+    if (!entry) throw new Error('No DocWorkerFn in the template');
+    return entry[1] as { Properties: Record<string, unknown> };
+  };
+
+  it('runs on Node 20, ARM64', () => {
+    const props = docWorker().Properties;
+    expect(props['Runtime']).toBe('nodejs20.x');
+    expect(props['Architectures']).toEqual(['arm64']);
+  });
+
+  it('reads evidence and writes documents, never the other way round', () => {
+    const statements = (
+      Object.entries(template.findResources('AWS::IAM::Policy')).find(([id]) =>
+        id.startsWith('DocWorkerFnServiceRoleDefaultPolicy'),
+      )?.[1] as { Properties: { PolicyDocument: { Statement: unknown[] } } }
+    ).Properties.PolicyDocument.Statement;
+
+    const text = JSON.stringify(statements);
+    expect(text).toContain('s3:GetObject');
+    expect(text).toContain('s3:PutObject');
+
+    // The write must be scoped to the documents bucket. Evidence is
+    // append-only by bucket policy, and nothing in this stack should be
+    // asking to put an object there.
+    const puts = (statements as Array<{ Action?: string | string[]; Resource?: unknown }>).filter(
+      (st) => (Array.isArray(st.Action) ? st.Action : [st.Action]).includes('s3:PutObject'),
+    );
+    // The buckets are imported by name, so their ARNs carry the name rather
+    // than a logical-id reference — the assertion matches what is actually in
+    // the template.
+    expect(puts.length).toBeGreaterThan(0);
+    for (const put of puts) {
+      expect(JSON.stringify(put.Resource)).toContain('test-documents');
+      expect(JSON.stringify(put.Resource)).not.toContain('test-evidence');
+    }
+  });
+
+  /**
+   * Delivery is cut from this build (CLAUDE.md "Scope"), so the worker holds
+   * no send permission. An unused SES grant on a function that handles a
+   * tenant's address and photographs is precisely what later becomes an
+   * accidental send path.
+   */
+  it('holds no SES permission anywhere in the stack', () => {
+    expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).not.toContain('ses:');
+  });
+
+  it('is invoked by complete-phase and by diff-worker, and by nothing else', () => {
+    const invokers = Object.entries(template.findResources('AWS::IAM::Policy'))
+      .filter(([, policy]) => JSON.stringify(policy).includes('lambda:InvokeFunction'))
+      .map(([id]) => id);
+
+    expect(invokers).toHaveLength(2);
+    expect(invokers.some((id) => id.startsWith('CompletePhaseFn'))).toBe(true);
+    expect(invokers.some((id) => id.startsWith('DiffWorkerFn'))).toBe(true);
+  });
+
+  it('tells both dispatchers which function to invoke', () => {
+    const envOf = (prefix: string): Record<string, unknown> | undefined =>
+      (
+        Object.entries(template.findResources('AWS::Lambda::Function')).find(([id]) =>
+          id.startsWith(prefix),
+        )?.[1] as { Properties: { Environment?: { Variables?: Record<string, unknown> } } }
+      ).Properties.Environment?.Variables;
+
+    expect(envOf('CompletePhaseFn')).toHaveProperty('DOC_WORKER_FUNCTION_NAME');
+    expect(envOf('DiffWorkerFn')).toHaveProperty('DOC_WORKER_FUNCTION_NAME');
+  });
+
+  it('is not exposed as an HTTP route', () => {
+    expect(routes().some((r) => r.Properties.RouteKey.toLowerCase().includes('doc'))).toBe(false);
   });
 });
 

@@ -24,6 +24,7 @@
     "@aws-sdk/s3-presigned-post": "^3.1136.0",
     "@aws-sdk/s3-request-presigner": "^3.1136.0",
     "@handover/shared": "workspace:*",
+    "pdf-lib": "^1.17.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
