@@ -30,9 +30,10 @@
  * hash changed every time it was generated would undermine the one property
  * the rest of the system is built on.
  */
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { stripJpegMetadata } from '../../domain/evidence/strip-metadata.js';
-import type { PDFFont, PDFImage, PDFPage } from 'pdf-lib';
+import { CONTENT_WIDTH, Canvas, MUTED, drawFooters, formatBytes, wrap } from './canvas.js';
+import type { Fonts } from './canvas.js';
 import type { ReportModel, ReportPhoto, ReportRoom } from '../../domain/documents/report-model.js';
 
 /* ── Fixed copy ────────────────────────────────────────────────────────────── */
@@ -76,137 +77,6 @@ const ORIGIN_LABEL: Readonly<Record<string, string>> = {
   TENANT_RECORDED: 'Recorded by the tenant',
   TENANT_ACCEPTED_SUGGESTION: 'Software suggestion, reviewed and accepted by the tenant',
 };
-
-/* ── Layout ────────────────────────────────────────────────────────────────── */
-
-const PAGE = { width: 595.28, height: 841.89 } as const; // A4 portrait, points
-const MARGIN = 48;
-const CONTENT_WIDTH = PAGE.width - MARGIN * 2;
-
-const INK = rgb(0.1, 0.1, 0.12);
-const MUTED = rgb(0.42, 0.42, 0.46);
-const RULE = rgb(0.85, 0.85, 0.88);
-
-interface Fonts {
-  readonly body: PDFFont;
-  readonly bold: PDFFont;
-  readonly mono: PDFFont;
-}
-
-/** A cursor over a growing document, so callers never track page breaks. */
-class Canvas {
-  #doc: PDFDocument;
-  #fonts: Fonts;
-  #page: PDFPage;
-  #y: number;
-  readonly pages: PDFPage[] = [];
-
-  constructor(doc: PDFDocument, fonts: Fonts) {
-    this.#doc = doc;
-    this.#fonts = fonts;
-    this.#page = this.#newPage();
-    this.#y = PAGE.height - MARGIN;
-  }
-
-  #newPage(): PDFPage {
-    const page = this.#doc.addPage([PAGE.width, PAGE.height]);
-    this.pages.push(page);
-    return page;
-  }
-
-  /** Ensure `height` points are available, breaking to a new page if not. */
-  reserve(height: number): void {
-    if (this.#y - height < MARGIN + 28) {
-      this.#page = this.#newPage();
-      this.#y = PAGE.height - MARGIN;
-    }
-  }
-
-  text(
-    value: string,
-    options: { size?: number; bold?: boolean; mono?: boolean; color?: ReturnType<typeof rgb>; indent?: number } = {},
-  ): void {
-    const size = options.size ?? 10;
-    const font = options.mono ? this.#fonts.mono : options.bold ? this.#fonts.bold : this.#fonts.body;
-    this.reserve(size + 4);
-    this.#y -= size + 2;
-    this.#page.drawText(sanitise(value), {
-      x: MARGIN + (options.indent ?? 0),
-      y: this.#y,
-      size,
-      font,
-      color: options.color ?? INK,
-    });
-    this.#y -= 2;
-  }
-
-  gap(points = 8): void {
-    this.#y -= points;
-  }
-
-  rule(): void {
-    this.reserve(10);
-    this.#y -= 6;
-    this.#page.drawLine({
-      start: { x: MARGIN, y: this.#y },
-      end: { x: MARGIN + CONTENT_WIDTH, y: this.#y },
-      thickness: 0.5,
-      color: RULE,
-    });
-    this.#y -= 6;
-  }
-
-  image(image: PDFImage, width: number, height: number): void {
-    this.reserve(height + 6);
-    this.#y -= height;
-    this.#page.drawImage(image, { x: MARGIN, y: this.#y, width, height });
-    this.#y -= 4;
-  }
-
-  get font(): Fonts {
-    return this.#fonts;
-  }
-}
-
-/**
- * WinAnsi cannot encode every character a tenant might type, and pdf-lib
- * throws on one it cannot draw — which would fail the whole document over a
- * curly quote. Replacing the common typographic characters and dropping the
- * rest keeps a stray character from costing the tenant their report.
- */
-function sanitise(value: string): string {
-  return value
-    .replace(/[‘’‛]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[–—]/g, '-')
-    .replace(/…/g, '...')
-    .replace(/[^\x20-\x7E]/g, '');
-}
-
-/** Wrap to the content width, measured in the font it will be drawn in. */
-function wrap(value: string, font: PDFFont, size: number, width = CONTENT_WIDTH): string[] {
-  const words = sanitise(value).split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = '';
-
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (font.widthOfTextAtSize(candidate, size) <= width) {
-      line = candidate;
-      continue;
-    }
-    if (line) lines.push(line);
-    line = word;
-  }
-  if (line) lines.push(line);
-  return lines.length > 0 ? lines : [''];
-}
-
-function formatBytes(bytes: number): string {
-  return bytes >= 1024 * 1024
-    ? `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-    : `${Math.round(bytes / 1024)} KB`;
-}
 
 /* ── Photographs ───────────────────────────────────────────────────────────── */
 
@@ -430,16 +300,7 @@ export async function renderReport(
   }
 
   // Footer on every page, drawn last so the page count is known.
-  const pages = doc.getPages();
-  pages.forEach((page, index) => {
-    page.drawText(sanitise(`${recordRef}  ·  page ${index + 1} of ${pages.length}`), {
-      x: MARGIN,
-      y: MARGIN - 18,
-      size: 7,
-      font: fonts.mono,
-      color: MUTED,
-    });
-  });
+  const pageCount = drawFooters(doc, fonts, recordRef);
 
-  return { bytes: await doc.save({ useObjectStreams: false }), pageCount: pages.length };
+  return { bytes: await doc.save({ useObjectStreams: false }), pageCount };
 }

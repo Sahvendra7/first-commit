@@ -50,3 +50,17 @@ export function pdfText(bytes: Uint8Array): string {
 
   return chunks.join('\n');
 }
+
+/**
+ * The same text, read as continuous prose.
+ *
+ * `pdfText` joins each drawn string with a newline, which is the right shape
+ * for asserting that a particular line exists. It is the wrong shape for
+ * asserting that the document *says* something: a sentence laid out over two
+ * lines extracts as `...it is not legal\nadvice...`, and a phrase assertion
+ * against it fails even though a human reading the page sees the sentence
+ * whole. Collapsing the breaks asserts what the reader actually reads.
+ */
+export function pdfProse(bytes: Uint8Array): string {
+  return pdfText(bytes).replace(/\s+/g, ' ').trim();
+}
