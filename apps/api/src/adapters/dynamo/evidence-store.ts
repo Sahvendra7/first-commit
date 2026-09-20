@@ -14,6 +14,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import {
   GSI1_NAME,
+  diffSkPrefix,
   key,
   photoSk,
   photoSkPhasePrefix,
@@ -33,6 +34,7 @@ import type {
 import { config } from '../config.js';
 import { documentClient } from './client.js';
 import type { ClockKeys } from '../../domain/tenancy/state-machine.js';
+import type { PersistedDiffItem } from '../../domain/diff/persisted.js';
 
 /** Thrown when a conditional write loses its race after the retry budget. */
 export class WriteContentionError extends Error {
@@ -336,4 +338,99 @@ export async function putJob(job: JobItem): Promise<void> {
 /** Seed or replace a state rule. Used by the seeding script, not by a handler. */
 export async function putStateRule(rule: StateRuleItem): Promise<void> {
   await documentClient().send(new PutCommand({ TableName: config.tableName(), Item: rule }));
+}
+
+/* ── Room diffs ────────────────────────────────────────────────────────────── */
+
+/** One room's diff, or `undefined` before any worker has written it. */
+export async function getRoomDiff(
+  tenancyId: string,
+  roomId: string,
+): Promise<PersistedDiffItem | undefined> {
+  const out = await documentClient().send(
+    new GetCommand({
+      TableName: config.tableName(),
+      Key: key.diff(tenancyId, roomId),
+      ConsistentRead: true,
+    }),
+  );
+  return out.Item as PersistedDiffItem | undefined;
+}
+
+/** Every room diff of a tenancy. Used by the document path (§8.2). */
+export async function getRoomDiffs(tenancyId: string): Promise<PersistedDiffItem[]> {
+  const out = await documentClient().send(
+    new QueryCommand({
+      TableName: config.tableName(),
+      KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+      ExpressionAttributeNames: { '#pk': 'PK', '#sk': 'SK' },
+      ExpressionAttributeValues: { ':pk': tenancyPk(tenancyId), ':prefix': diffSkPrefix() },
+      ConsistentRead: true,
+    }),
+  );
+  return (out.Items ?? []) as PersistedDiffItem[];
+}
+
+/**
+ * Read-modify-write one room's diff under optimistic concurrency.
+ *
+ * `mutate` is a **pure domain function**: it receives the current item (or
+ * `undefined` on the first write) and returns the next one. Everything AWS
+ * about the operation — the conditional expression, the contention retry, the
+ * version counter — stays here, which is what lets the fold in
+ * `domain/diff/patch-room.ts` be tested with no mocking at all.
+ *
+ * The condition is on `version`, not on the item's contents. Two tenants
+ * cannot collide on one room, but one tenant with the review screen open in
+ * two tabs absolutely can, and a last-write-wins put would silently discard
+ * the earlier tab's accept/reject decisions. Losing the race re-reads and
+ * replays the fold over the winner's list instead, so both sets of edits
+ * survive.
+ */
+export async function patchRoomDiff(
+  tenancyId: string,
+  roomId: string,
+  mutate: (current: PersistedDiffItem | undefined) => PersistedDiffItem,
+  attempts = 5,
+): Promise<PersistedDiffItem> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const current = await getRoomDiff(tenancyId, roomId);
+    const next: PersistedDiffItem = {
+      ...mutate(current),
+      ...key.diff(tenancyId, roomId),
+      entityType: 'DIFF',
+      version: (current?.version ?? 0) + 1,
+    };
+
+    // A pre-version item is guarded on the attribute's absence rather than on
+    // a value, so an item written before this counter existed cannot be
+    // clobbered by a writer that assumes version 0.
+    const guard = !current
+      ? { ConditionExpression: 'attribute_not_exists(PK)' }
+      : current.version === undefined
+        ? {
+            ConditionExpression: 'attribute_not_exists(#v)',
+            ExpressionAttributeNames: { '#v': 'version' },
+          }
+        : {
+            ConditionExpression: '#v = :expected',
+            ExpressionAttributeNames: { '#v': 'version' },
+            ExpressionAttributeValues: { ':expected': current.version },
+          };
+
+    try {
+      await documentClient().send(
+        new PutCommand({ TableName: config.tableName(), Item: next, ...guard }),
+      );
+      return next;
+    } catch (err) {
+      if (!isConditionalFailure(err)) throw err;
+      // Someone else wrote this room between our read and our write. Re-read
+      // and replay the fold over what they left.
+    }
+  }
+
+  throw new WriteContentionError(
+    `Could not update diff for ${tenancyId}/${roomId} after ${attempts} attempts`,
+  );
 }

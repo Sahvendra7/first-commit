@@ -22,3 +22,9 @@ export const newRoomId = (): string => `r_${token()}`;
 export const newPhotoId = (): string => `p_${token()}`;
 export const newJobId = (): string => `j_${token()}`;
 export const newDocumentId = (): string => `d_${token()}`;
+/**
+ * A tenant-authored change's id. Minted here, never accepted from a client:
+ * a client-supplied id could collide with — and so silently overwrite — a
+ * change already on the room (§7 PATCH).
+ */
+export const newChangeId = (): string => `chg_${token()}`;

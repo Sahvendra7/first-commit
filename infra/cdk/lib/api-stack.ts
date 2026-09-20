@@ -11,7 +11,12 @@
  * and `clock-sweeper` join this same stack when their paths are built.
  */
 import { CfnOutput, Duration, Stack, Tags } from 'aws-cdk-lib';
-import { HttpApi, HttpMethod, CorsHttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
+import {
+  HttpApi,
+  HttpMethod,
+  CorsHttpMethod,
+  HttpNoneAuthorizer,
+} from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpJwtAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Architecture, Runtime } from 'aws-cdk-lib/aws-lambda';
@@ -113,12 +118,32 @@ export class ApiStack extends Stack {
     });
     const getTenancy = fn('GetTenancyFn', 'handlers/http/get-tenancy.ts');
     const getDiff = fn('GetDiffFn', 'handlers/http/get-diff.ts');
+    const patchDiff = fn('PatchDiffFn', 'handlers/http/patch-diff.ts');
+    const getJob = fn('GetJobFn', 'handlers/http/get-job.ts');
 
-    const apiHandlers = [createTenancy, presignPhotos, completePhase, getTenancy, getDiff];
+    const apiHandlers = [
+      createTenancy,
+      presignPhotos,
+      completePhase,
+      getTenancy,
+      getDiff,
+      patchDiff,
+      getJob,
+    ];
 
     for (const handler of apiHandlers) {
       table.grantReadWriteData(handler);
     }
+
+    /**
+     * The public route (§5.2). It serves the reviewed statutory table and
+     * nothing else, so it gets **read-only** table access rather than the
+     * read/write the authenticated handlers carry: an unauthenticated function
+     * that could write to the evidence table would be a far worse thing to get
+     * wrong than one that can read a rules row.
+     */
+    const getStateRules = fn('GetStateRulesFn', 'handlers/http/get-state-rules.ts');
+    table.grantReadData(getStateRules);
 
     /**
      * §10.3, exactly: `api-handler` gets `s3:PutObject` on the upload prefix —
@@ -204,11 +229,24 @@ export class ApiStack extends Stack {
       defaultAuthorizer: authorizer,
     });
 
-    const route = (path: string, method: HttpMethod, handler: NodejsFunction, name: string): void => {
+    const route = (
+      path: string,
+      method: HttpMethod,
+      handler: NodejsFunction,
+      name: string,
+      /**
+       * Overrides the API's default JWT authorizer. Only ever passed
+       * `HttpNoneAuthorizer`, and only for the one route §5.2 names as public.
+       * Spelled as an explicit argument rather than a default so that making a
+       * route public is a visible edit at the call site.
+       */
+      authorizerOverride?: HttpNoneAuthorizer,
+    ): void => {
       this.httpApi.addRoutes({
         path,
         methods: [method],
         integration: new HttpLambdaIntegration(`${name}Integration`, handler),
+        ...(authorizerOverride ? { authorizer: authorizerOverride } : {}),
       });
     };
 
@@ -222,6 +260,25 @@ export class ApiStack extends Stack {
       'CompletePhase',
     );
     route('/v1/tenancies/{id}/diff', HttpMethod.GET, getDiff, 'GetDiff');
+    route('/v1/tenancies/{id}/diff/{roomId}', HttpMethod.PATCH, patchDiff, 'PatchDiff');
+    route('/v1/jobs/{jobId}', HttpMethod.GET, getJob, 'GetJob');
+
+    /**
+     * §5.2 and §7: the state-rules route is **public** — no Cognito JWT. It
+     * carries no tenancy data and no personal data, it is CloudFront-cacheable,
+     * and the UI needs it to render deadline copy before anyone signs in.
+     *
+     * `HttpNoneAuthorizer` is what overrides the API's `defaultAuthorizer` for
+     * this one route. Without it the route inherits the JWT authorizer and
+     * returns 401 to the very callers it exists for.
+     */
+    route(
+      '/v1/state-rules/{code}',
+      HttpMethod.GET,
+      getStateRules,
+      'GetStateRules',
+      new HttpNoneAuthorizer(),
+    );
 
     Tags.of(this).add('handover:stack', 'api');
 

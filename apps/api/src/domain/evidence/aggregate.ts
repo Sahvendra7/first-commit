@@ -10,8 +10,8 @@
  * which is decided by `roomId` and ordinal — by code, from keys — and never by
  * a model looking at the images.
  */
+import type { PersistedDiffItem } from '../diff/persisted.js';
 import type {
-  DiffItem,
   DocumentItem,
   DocumentRef,
   GetDiffResponse,
@@ -49,7 +49,7 @@ interface Partitioned {
   tenancy?: TenancyItem;
   rooms: RoomItem[];
   photos: PhotoItem[];
-  diffs: DiffItem[];
+  diffs: PersistedDiffItem[];
   documents: DocumentItem[];
 }
 
@@ -220,7 +220,16 @@ export function buildTenancyAggregate(
 
 /* ── GET /v1/tenancies/{id}/diff ───────────────────────────────────────────── */
 
-function toRoomDiff(item: DiffItem, roomLabel: string): RoomDiff {
+/**
+ * The persisted diff as the wire sees it.
+ *
+ * `reviewReason` is carried through rather than derived: it is the UI's only
+ * way to explain *why* a room needs a human, and with the suggestion layer off
+ * `AI_DISABLED` is the normal path rather than an error (§9.6). A room whose
+ * reason is absent is one no worker has yet reached an opinion about, and it
+ * stays absent — the UI omits the line instead of guessing.
+ */
+export function toRoomDiff(item: PersistedDiffItem, roomLabel: string): RoomDiff {
   return {
     roomId: item.roomId,
     roomLabel,
@@ -229,7 +238,9 @@ function toRoomDiff(item: DiffItem, roomLabel: string): RoomDiff {
     ...(item.modelId ? { modelId: item.modelId } : {}),
     ...(item.promptVersion ? { promptVersion: item.promptVersion } : {}),
     ...(item.cacheKey ? { cacheKey: item.cacheKey } : {}),
+    ...(item.cacheHit !== undefined ? { cacheHit: item.cacheHit } : {}),
     ...(item.computedAt ? { computedAt: item.computedAt } : {}),
+    ...(item.reviewReason ? { reviewReason: item.reviewReason } : {}),
   };
 }
 
